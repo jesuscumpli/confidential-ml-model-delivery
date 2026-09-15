@@ -1,13 +1,28 @@
 # benchmarks
 
-Crypto evaluation phase (`docs/plan.md`, Milestone 2b). Measures the candidate
-ciphers and signers from `confidential-crypto` and exports the decision record
-to `docs/crypto-evaluation.md`.
+Crypto evaluation phase (`docs/plan.md`, Milestone 2b). Measures every cipher and
+signature scheme registered in `confidential-crypto`, combines the numbers with a
+sourced security scorecard (`src/bench/scorecard.yaml`) and exports the decision
+record to `docs/crypto-evaluation.md`.
 
 ```bash
 uv sync
-uv run bench --help          # runners and export (Milestone 2b)
-uv run jupyter lab notebooks # interactive evaluation
+
+# Interactive: open notebooks/crypto_evaluation.ipynb
+uv run jupyter lab notebooks
+
+# Headless: measure, then render the ADR
+uv run bench run --sizes 1 16 64 --repeats 5          # writes results/*.csv
+uv run bench run --artifact ../artifacts/model.tar     # add the real artifact size
+uv run bench export                                    # writes ../docs/crypto-evaluation.md
+
+# Quality gates
+uv run ruff check . && uv run mypy src tests && uv run pytest
 ```
 
-Notebooks are stripped of outputs before commit (`nbstripout`).
+Notes:
+
+- Peak memory is measured in a subprocess per (cipher, size) so native allocations
+  count; `--no-memory` skips it.
+- Entropy and chi-square are sanity checks only; they carry no weight in the ranking.
+- Strip notebook outputs before committing: `uv run nbstripout notebooks/*.ipynb`.

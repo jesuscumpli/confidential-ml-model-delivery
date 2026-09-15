@@ -1,0 +1,170 @@
+# Qualitative security scorecard. Scores are 0 (worst) to 3 (best); every row cites
+# the source the score is derived from. Edit here, never in the notebook.
+scale:
+  0: "unacceptable / absent"
+  1: "weak or conditional"
+  2: "adequate"
+  3: "strong"
+
+cipher_criteria:
+  aead: "Native authenticated encryption primitive (not a hand-rolled composition)"
+  nonce_misuse_resistance: "Consequence of accidentally reusing a nonce with the same key"
+  random_nonce_headroom: "Messages per key before random-nonce collision becomes a concern"
+  hardware_independence: "Performance and constant-time behaviour without AES-NI/PCLMUL"
+  standardisation: "RFC / NIST / FIPS status"
+  library_maturity: "Backend maturity and audit history"
+  post_quantum: "Margin against Grover (256-bit keys keep 128-bit PQ security)"
+
+ciphers:
+  aes-256-gcm:
+    aead: 3
+    nonce_misuse_resistance: 0
+    random_nonce_headroom: 2
+    hardware_independence: 1
+    standardisation: 3
+    library_maturity: 3
+    post_quantum: 3
+    notes: >-
+      Nonce reuse breaks confidentiality and authentication (GHASH key recovery).
+      96-bit random nonces: NIST SP 800-38D limits to 2^32 invocations per key.
+      Needs AES-NI + PCLMULQDQ for speed and constant time; software AES is slow and
+      table-based implementations leak timing.
+    sources:
+      - "NIST SP 800-38D (GCM), section 8.3 random IV limit"
+      - "RFC 5116 (AEAD interface)"
+      - "Joux, 'Authentication failures in NIST version of GCM' (nonce reuse)"
+  chacha20-poly1305:
+    aead: 3
+    nonce_misuse_resistance: 0
+    random_nonce_headroom: 2
+    hardware_independence: 3
+    standardisation: 2
+    library_maturity: 3
+    post_quantum: 3
+    notes: >-
+      Same 96-bit nonce and same catastrophic reuse as GCM. Constant-time in pure
+      software; the TLS 1.3 alternative to AES-GCM. Not on the FIPS 140-3 approved list.
+    sources:
+      - "RFC 8439 (ChaCha20 and Poly1305 for IETF protocols)"
+      - "RFC 8446 (TLS 1.3 cipher suites)"
+  xchacha20-poly1305:
+    aead: 3
+    nonce_misuse_resistance: 1
+    random_nonce_headroom: 3
+    hardware_independence: 3
+    standardisation: 1
+    library_maturity: 2
+    post_quantum: 3
+    notes: >-
+      192-bit nonce makes random-nonce collisions negligible (~2^80 messages), so the
+      operational nonce-management risk disappears; deliberate reuse is still fatal.
+      Specified only in an expired IRTF draft; de facto standard through libsodium.
+    sources:
+      - "draft-irtf-cfrg-xchacha-03 (expired)"
+      - "libsodium documentation, AEAD constructions"
+  aes-256-gcm-siv:
+    aead: 3
+    nonce_misuse_resistance: 3
+    random_nonce_headroom: 3
+    hardware_independence: 1
+    standardisation: 2
+    library_maturity: 2
+    post_quantum: 3
+    notes: >-
+      Nonce reuse only reveals whether two plaintexts are equal. Requires two passes
+      over the data, so it is slower than GCM. Available in OpenSSL 3.2+; less deployed.
+    sources:
+      - "RFC 8452 (AES-GCM-SIV)"
+      - "Gueron, Langley, Lindell, 'AES-GCM-SIV: Specification and Analysis'"
+  aes-256-cbc-hmac-sha256:
+    aead: 0
+    nonce_misuse_resistance: 1
+    random_nonce_headroom: 2
+    hardware_independence: 1
+    standardisation: 1
+    library_maturity: 0
+    post_quantum: 3
+    notes: >-
+      Evaluation-only negative example. Encrypt-then-MAC composition written by hand:
+      correctness depends on key separation, MAC coverage of nonce and AAD, constant-time
+      comparison and padding handling. Every historic CBC padding-oracle bug came from
+      this class of composition. Two passes and two primitives.
+    sources:
+      - "Bellare, Namprempre, 'Authenticated Encryption: Relations among notions'"
+      - "Vaudenay, 'Security flaws induced by CBC padding' (padding oracles)"
+
+signer_criteria:
+  standardisation: "RFC / NIST / FIPS status"
+  library_maturity: "Backend maturity and deployment history"
+  misuse_resistance: "Robustness against implementation and randomness failures"
+  side_channel_resistance: "Constant-time design of the reference algorithm"
+  post_quantum: "Security against a large quantum computer"
+  key_and_signature_size: "Compactness of public key and signature"
+
+signers:
+  ed25519:
+    standardisation: 3
+    library_maturity: 3
+    misuse_resistance: 3
+    side_channel_resistance: 3
+    post_quantum: 0
+    key_and_signature_size: 3
+    notes: >-
+      Deterministic signatures: no per-signature randomness to get wrong. Designed for
+      constant-time implementation. 32-byte keys, 64-byte signatures.
+    sources:
+      - "RFC 8032 (EdDSA)"
+      - "FIPS 186-5 (approved since 2023)"
+      - "Bernstein et al., 'High-speed high-security signatures'"
+  ecdsa-p256:
+    standardisation: 3
+    library_maturity: 3
+    misuse_resistance: 1
+    side_channel_resistance: 2
+    post_quantum: 0
+    key_and_signature_size: 3
+    notes: >-
+      Requires a fresh, secret, uniformly random nonce per signature; reusing or biasing
+      it leaks the private key (Sony PS3, Bitcoin wallet incidents). RFC 6979
+      deterministic nonces mitigate this but are not used by every backend.
+    sources:
+      - "FIPS 186-5 (ECDSA)"
+      - "RFC 6979 (deterministic ECDSA)"
+      - "fail0verflow, 'Console Hacking 2010' (PS3 nonce reuse)"
+  rsa-pss-3072:
+    standardisation: 3
+    library_maturity: 3
+    misuse_resistance: 2
+    side_channel_resistance: 2
+    post_quantum: 0
+    key_and_signature_size: 1
+    notes: >-
+      Probabilistic padding with a security proof. Large keys and signatures, slow key
+      generation and signing; verification is fast. 3072 bits is the NIST 128-bit level.
+    sources:
+      - "RFC 8017 (PKCS #1 v2.2, RSASSA-PSS)"
+      - "NIST SP 800-57 Part 1 (key size equivalences)"
+  rsa-pss-4096:
+    standardisation: 3
+    library_maturity: 3
+    misuse_resistance: 2
+    side_channel_resistance: 2
+    post_quantum: 0
+    key_and_signature_size: 0
+    notes: >-
+      Same properties as 3072 with more margin and proportionally slower operations.
+    sources:
+      - "RFC 8017 (PKCS #1 v2.2, RSASSA-PSS)"
+  ml-dsa-65:
+    standardisation: 3
+    library_maturity: 1
+    misuse_resistance: 2
+    side_channel_resistance: 2
+    post_quantum: 3
+    key_and_signature_size: 0
+    notes: >-
+      NIST post-quantum standard (Dilithium). ~2 KB public keys and ~3.3 KB signatures.
+      Hedged (randomised) signing by default. Implementations are new; few audits.
+    sources:
+      - "FIPS 204 (ML-DSA, August 2024)"
+      - "CNSA 2.0 (NSA guidance recommending ML-DSA)"

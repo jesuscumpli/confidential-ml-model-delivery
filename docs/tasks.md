@@ -52,10 +52,10 @@ Decisions already taken (2026-09-15):
 
 ## M3 — Crypto evaluation phase
 
-- [ ] `benchmarks/src/bench/`: runners for cipher throughput (1 MiB, 16 MiB, real artifact), peak memory, ciphertext overhead, entropy/byte-histogram, tamper check; signer keygen/sign/verify timing and sizes.
-- [ ] Qualitative security scorecard (`scorecard.yaml`): AEAD, nonce-misuse resistance, nonce collision bound, AES-NI dependency, standardisation (RFC/FIPS), library maturity, PQ resistance. Each row cites a source.
-- [ ] `benchmarks/notebooks/crypto_evaluation.ipynb`: tables + charts, one combined ranking per category.
-- [ ] `uv run bench export` writes `docs/crypto-evaluation.md` (ADR-style: context, candidates, measurements, decision, consequences).
+- [x] `benchmarks/src/bench/`: runners for cipher throughput (1 MiB, 16 MiB, real artifact), peak memory, ciphertext overhead, entropy/byte-histogram, tamper check; signer keygen/sign/verify timing and sizes.
+- [x] Qualitative security scorecard (`scorecard.yaml`): AEAD, nonce-misuse resistance, nonce collision bound, AES-NI dependency, standardisation (RFC/FIPS), library maturity, PQ resistance. Each row cites a source.
+- [x] `benchmarks/notebooks/crypto_evaluation.ipynb`: tables + charts, one combined ranking per category.
+- [x] `uv run bench export` writes `docs/crypto-evaluation.md` (ADR-style: context, candidates, measurements, decision, consequences).
 - [ ] Record the selected default cipher and signer in the registry (`DEFAULT_CIPHER`, `DEFAULT_SIGNER`).
 - Acceptance: notebook runs end to end from a clean `uv sync`; markdown export committed; decision defended with numbers.
 
