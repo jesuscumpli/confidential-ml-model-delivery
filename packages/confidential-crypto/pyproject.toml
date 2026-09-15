@@ -1,16 +1,20 @@
 [project]
-name = "producer"
+name = "confidential-crypto"
 version = "0.1.0"
-description = "Encrypts and publishes HF model artifacts (Layer 1/2 producer)"
+description = "Artifact format, algorithm registry, ciphers and signers shared by producer and consumer"
 readme = "README.md"
 authors = [
     { name = "jesuscumpli" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "confidential-crypto",
     "cryptography>=44.0.0",
-    "huggingface_hub>=0.30.0",
+]
+
+[project.optional-dependencies]
+# Algorithms used only by the evaluation phase; never installed in service images.
+bench = [
+    "pynacl>=1.5.0",
 ]
 
 [dependency-groups]
@@ -19,9 +23,6 @@ dev = [
     "pytest>=8.3.0",
     "ruff>=0.9.0",
 ]
-
-[tool.uv.sources]
-confidential-crypto = { path = "../../packages/confidential-crypto", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]

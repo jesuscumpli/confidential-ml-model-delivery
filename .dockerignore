@@ -1,0 +1,22 @@
+# Root build context: only sources, lockfiles and the shared package are needed.
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/tests/
+.git/
+.idea/
+.vscode/
+docs/
+k8s/
+scripts/
+tests/
+benchmarks/
+*.enc
+*.sig
+*.key
+*.pem
+model_cache/
+artifacts/

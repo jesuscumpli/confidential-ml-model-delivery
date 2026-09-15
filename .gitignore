@@ -32,3 +32,6 @@ venv/
 *.pem
 model_cache/
 artifacts/
+# Notebooks and benchmark outputs
+.ipynb_checkpoints/
+benchmarks/results/

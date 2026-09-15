@@ -21,12 +21,13 @@ Decisions already taken (2026-09-15):
 
 ## M0 — Bootstrap adjustments
 
-- [ ] Commit `docs/plan.md`; add a short "Evaluation phase" section and the shared-package justification to it.
-- [ ] Create `packages/confidential-crypto` uv project (same ruff/mypy/pytest config as the services).
-- [ ] Create `benchmarks/` uv project (jupyter, pandas, matplotlib, `confidential-crypto[bench]`).
-- [ ] Wire path dependencies: producer and consumer depend on `confidential-crypto`.
-- [ ] Add `.idea/` and notebook checkpoints to `.gitignore`; `nbstripout` or equivalent for clean notebook diffs.
-- [ ] `scripts/check.sh`: runs `ruff check`, `ruff format --check`, `mypy`, `pytest` across all uv projects.
+- [x] Commit `docs/plan.md`; add a short "Evaluation phase" section and the shared-package justification to it.
+- [x] Create `packages/confidential-crypto` uv project (same ruff/mypy/pytest config as the services).
+- [x] Create `benchmarks/` uv project (jupyter, pandas, matplotlib, `confidential-crypto[bench]`).
+- [x] Wire path dependencies: producer and consumer depend on `confidential-crypto`.
+- [x] Add notebook checkpoints and benchmark results to `.gitignore`; `nbstripout` in the benchmarks dev group.
+- [x] `scripts/check.sh`: runs `ruff check`, `ruff format --check`, `mypy`, `pytest` across all uv projects.
+- [x] Dockerfiles rebuilt with repository-root build context (shared package in context), non-root user.
 - Acceptance: `uv sync` and `scripts/check.sh` pass in all three projects.
 
 ## M1 — Artifact format + AES-256-GCM (baseline)

@@ -11,23 +11,30 @@ running in Kubernetes retrieves the artifact, verifies the signature (Layer 2),
 gets the decryption key from a Kubernetes Secret (Layer 1), decrypts, restores
 and loads the model, and runs a minimal inference.
 
-The authoritative spec lives in `docs/plan.md` and `docs/test_assignment.md`.
-Start there before making changes.
+The authoritative spec lives in `docs/plan.md` and `docs/test_assignment.md`;
+the per-milestone checklist is `docs/tasks.md`. Start there before making changes.
 
 ## Repository layout
 
 ```text
-services/producer/   # independent uv Python project (publishes artifacts)
-services/consumer/   # independent uv Python project (retrieves artifacts)
-tests/integration/   # end-to-end integration tests against both services
-k8s/                 # Kubernetes manifests
-scripts/             # helper scripts
-docs/                # plan, architecture, security, layers docs
+packages/confidential-crypto/  # shared crypto core: format, registry, ciphers, signers
+services/producer/             # independent uv Python project (publishes artifacts)
+services/consumer/             # independent uv Python project (retrieves artifacts)
+benchmarks/                    # crypto evaluation: runners + Jupyter notebook
+tests/integration/             # end-to-end integration tests against both services
+k8s/                           # Kubernetes manifests
+scripts/                       # helper scripts (check.sh runs all quality gates)
+docs/                          # plan, tasks, architecture, security, layers docs
 ```
 
 Producer and consumer are separate projects on purpose: independent dependency
 graphs, Docker images, and trust boundaries. Do not introduce a shared Python
 package unless duplication becomes substantial and clearly justified.
+
+The one justified shared package is `packages/confidential-crypto`: the artifact
+format and algorithm registry must be identical on both sides. It contains no
+Hub, Kubernetes or model-loading code. Algorithms used only by the evaluation
+phase live behind its `bench` extra and never ship in service images.
 
 ## Coding standards
 
@@ -50,7 +57,8 @@ package unless duplication becomes substantial and clearly justified.
 
 ## Working with uv
 
-Each service is its own uv project. Run commands from the service directory:
+Each project (`packages/confidential-crypto`, `services/*`, `benchmarks`) is its
+own uv project. Run commands from the project directory:
 
 ```bash
 cd services/producer
@@ -59,6 +67,17 @@ uv run pytest      # run tests
 uv run ruff check  # lint
 uv run ruff format --check
 uv run mypy src
+```
+
+`scripts/check.sh` runs all of the above in every project; it must pass before
+a milestone is considered done.
+
+Docker images are built from the repository root so the shared package is in
+the build context:
+
+```bash
+docker build -f services/producer/Dockerfile -t producer:dev .
+docker build -f services/consumer/Dockerfile -t consumer:dev .
 ```
 
 ## Milestones / status

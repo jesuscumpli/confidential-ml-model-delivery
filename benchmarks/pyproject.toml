@@ -1,27 +1,39 @@
 [project]
-name = "producer"
+name = "bench"
 version = "0.1.0"
-description = "Encrypts and publishes HF model artifacts (Layer 1/2 producer)"
+description = "Crypto evaluation phase: benchmark runners and Jupyter notebook"
 readme = "README.md"
 authors = [
     { name = "jesuscumpli" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "confidential-crypto",
-    "cryptography>=44.0.0",
-    "huggingface_hub>=0.30.0",
+    "confidential-crypto[bench]",
+    "jupyterlab>=4.3.0",
+    "matplotlib>=3.9.0",
+    "pandas>=2.2.0",
+    "psutil>=6.0.0",
+    "pyyaml>=6.0.0",
+    "tabulate>=0.9.0",
 ]
+
+[project.scripts]
+bench = "bench.__main__:main"
 
 [dependency-groups]
 dev = [
     "mypy>=1.14.0",
+    "nbstripout>=0.8.0",
+    "pandas-stubs>=2.2.0",
     "pytest>=8.3.0",
     "ruff>=0.9.0",
+    "types-psutil>=6.0.0",
+    "types-pyyaml>=6.0.0",
+    "types-tabulate>=0.9.0",
 ]
 
 [tool.uv.sources]
-confidential-crypto = { path = "../../packages/confidential-crypto", editable = true }
+confidential-crypto = { path = "../packages/confidential-crypto", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
@@ -30,6 +42,7 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "C4", "S"]

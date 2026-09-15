@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "confidential-crypto",
     "cryptography>=44.0.0",
     "huggingface_hub>=0.30.0",
     "transformers>=4.48.0",
@@ -19,6 +20,9 @@ dev = [
     "pytest>=8.3.0",
     "ruff>=0.9.0",
 ]
+
+[tool.uv.sources]
+confidential-crypto = { path = "../../packages/confidential-crypto", editable = true }
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
