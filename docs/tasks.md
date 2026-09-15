@@ -32,22 +32,22 @@ Decisions already taken (2026-09-15):
 
 ## M1 — Artifact format + AES-256-GCM (baseline)
 
-- [ ] `format.py`: header `magic | version | cipher_id | nonce_len | nonce`, header bytes used as AAD.
-- [ ] `ciphers/base.py`: `AeadCipher` protocol (`cipher_id`, `name`, `key_size`, `nonce_size`, `encrypt`, `decrypt`).
-- [ ] `ciphers/aes_gcm.py` with random 96-bit nonce and key-length validation.
-- [ ] `registry.py`: factory by name and by id; unknown id fails explicitly.
-- [ ] `keys.py`: symmetric key generation, hex/raw loading, validation; guarantee no key bytes in exceptions/logs.
-- [ ] Tests: round-trip, wrong key, flipped ciphertext byte, flipped header byte (cipher_id swap must fail), truncated input, malformed magic/version, nonce uniqueness across calls.
+- [x] `format.py`: header `magic | version | cipher_id | nonce_len | nonce`, header bytes used as AAD.
+- [x] `ciphers/base.py`: `AeadCipher` protocol (`cipher_id`, `name`, `key_size`, `nonce_size`, `encrypt`, `decrypt`).
+- [x] `ciphers/aes_gcm.py` with random 96-bit nonce and key-length validation.
+- [x] `registry.py`: factory by name and by id; unknown id fails explicitly.
+- [x] `keys.py`: symmetric key generation, hex/raw loading, validation; guarantee no key bytes in exceptions/logs.
+- [x] Tests: round-trip, wrong key, flipped ciphertext byte, flipped header byte (cipher_id swap must fail), truncated input, malformed magic/version, nonce uniqueness across calls.
 - Acceptance: package tests green; `encrypt(decrypt(x)) == x` property test with random sizes (0 B, 1 B, 1 MiB).
 
 ## M2 — Additional ciphers and signers (for evaluation)
 
-- [ ] `ciphers/chacha20_poly1305.py`, `ciphers/aes_gcm_siv.py` (skip with clear error if OpenSSL lacks it).
-- [ ] `ciphers/xchacha20_poly1305.py` behind `[bench]` extra (PyNaCl).
-- [ ] `ciphers/aes_cbc_hmac.py` behind `[bench]`, flagged `production_safe = False` in the registry.
-- [ ] `signers/base.py`: `Signer`/`Verifier` protocols, signature envelope (`scheme_id | key_fingerprint | signature`).
-- [ ] `signers/ed25519.py`, `signers/ecdsa_p256.py`, `signers/rsa_pss.py`; `signers/ml_dsa.py` behind `[bench]` (skip if unavailable).
-- [ ] Shared parametrised test suite run against every registered cipher/signer (positive + negative paths).
+- [x] `ciphers/chacha20_poly1305.py`, `ciphers/aes_gcm_siv.py` (skip with clear error if OpenSSL lacks it).
+- [x] `ciphers/xchacha20_poly1305.py` behind `[bench]` extra (PyNaCl).
+- [x] `ciphers/aes_cbc_hmac.py` behind `[bench]`, flagged `production_safe = False` in the registry.
+- [x] `signers/base.py`: `Signer`/`Verifier` protocols, signature envelope (`scheme_id | key_fingerprint | signature`).
+- [x] `signers/ed25519.py`, `signers/ecdsa_p256.py`, `signers/rsa_pss.py`; `signers/ml_dsa.py` behind `[bench]` (skip if unavailable).
+- [x] Shared parametrised test suite run against every registered cipher/signer (positive + negative paths).
 - Acceptance: every algorithm passes the same conformance tests; the registry refuses non-production algorithms unless explicitly allowed.
 
 ## M3 — Crypto evaluation phase

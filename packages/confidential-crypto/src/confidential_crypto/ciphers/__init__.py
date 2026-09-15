@@ -1,1 +1,5 @@
-"""AEAD cipher implementations. Populated at Milestone 2."""
+"""AEAD cipher implementations behind the `AeadCipher` protocol."""
+
+from confidential_crypto.ciphers.base import AeadCipher, new_nonce
+
+__all__ = ["AeadCipher", "new_nonce"]

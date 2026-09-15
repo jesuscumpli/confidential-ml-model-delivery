@@ -14,10 +14,10 @@ for project in "${PROJECTS[@]}"; do
   echo "==> ${project}"
   (
     cd "${ROOT}/${project}"
-    uv sync --quiet
+    uv sync --quiet --all-extras
     uv run ruff check .
     uv run ruff format --check .
-    uv run mypy src
+    uv run mypy src tests
     uv run pytest -q
   )
 done
