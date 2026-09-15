@@ -32,9 +32,24 @@ def signer_scorecard() -> pd.DataFrame:
     return _table(data["signers"], data["signer_criteria"])
 
 
+def mode_scorecard() -> pd.DataFrame:
+    data = _load()
+    return _table(data["modes"], data["mode_criteria"])
+
+
 def criteria() -> tuple[dict[str, str], dict[str, str]]:
     data = _load()
     return data["cipher_criteria"], data["signer_criteria"]
+
+
+def mode_criteria() -> dict[str, str]:
+    data: dict[str, str] = _load()["mode_criteria"]
+    return data
+
+
+def mode_notes() -> dict[str, dict[str, Any]]:
+    data = _load()
+    return {n: {"notes": e["notes"], "sources": e["sources"]} for n, e in data["modes"].items()}
 
 
 def notes() -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:

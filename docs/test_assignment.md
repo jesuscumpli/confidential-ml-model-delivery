@@ -60,7 +60,7 @@ takes place (abort if verification fails).
 Extend the pipeline by replacing the Kubernetes Secret with attested key
 retrieval using Confidential Containers in development mode. The
 consumer no longer trusts the host for key delivery, so the decryption
-key is only released after an attestation. This layer can be implemented
+key is only released after an attestation. This layer can be implemented
 on top of Layer 1 alone or combined with Layer 2 for the full
 confidential pipeline (encrypt + sign + attest).
 
@@ -68,7 +68,7 @@ confidential pipeline (encrypt + sign + attest).
 
 1. Deploy the CoCo operator and Trustee KBS on the cluster using the "kata-qemu-coco-dev" runtime class. 
 2. Store the decryption key in KBS via "kbs-client set-resource" under a defined resource path
-(e.g. default/key/my-model) instead of a Kubernetes Secret. 
+(e.g.default/key/my-model) instead of a Kubernetes Secret. 
 3. Configure a permissive resource policy in KBS allowing key release to sample TEE
 attestation. 
 4. Run the consumer pod with the KBS address configured via

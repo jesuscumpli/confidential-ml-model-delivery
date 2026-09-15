@@ -168,3 +168,65 @@ signers:
     sources:
       - "FIPS 204 (ML-DSA, August 2024)"
       - "CNSA 2.0 (NSA guidance recommending ML-DSA)"
+
+mode_criteria:
+  memory_bound: "Peak memory independent of artifact size"
+  auth_before_release: "No plaintext leaves the decryptor before it is authenticated"
+  truncation_detection: "Dropping trailing data is detected"
+  reorder_detection: "Moving or swapping ciphertext segments is detected"
+  cipher_agnostic: "Works with any AEAD in the registry"
+  format_stability: "Wire format shared with the baseline (no version bump)"
+  implementation_simplicity: "Amount of logic that can be wrong"
+
+modes:
+  one-shot:
+    memory_bound: 0
+    auth_before_release: 3
+    truncation_detection: 3
+    reorder_detection: 3
+    cipher_agnostic: 3
+    format_stability: 3
+    implementation_simplicity: 3
+    notes: >-
+      One AEAD call over the whole artifact: the simplest possible code and the
+      strongest atomic guarantee (nothing is released unless everything verifies).
+      Costs ~2x the artifact in RAM on each side (input plus output buffer); fine for a
+      ~270 MB model, not for multi-GB LLM weights.
+    sources:
+      - "RFC 5116 section 2 (AEAD as an all-or-nothing interface)"
+  chunked:
+    memory_bound: 3
+    auth_before_release: 3
+    truncation_detection: 3
+    reorder_detection: 3
+    cipher_agnostic: 3
+    format_stability: 1
+    implementation_simplicity: 1
+    notes: >-
+      STREAM construction (Hoang, Reyhanitabar, Rogaway, Vizár 2015): per-chunk AEAD
+      with nonce = prefix || counter || last-flag and the header in every chunk's AAD.
+      Memory is O(chunk); each chunk is authenticated before its plaintext is written;
+      counter and last flag catch reordering and truncation at chunk boundaries.
+      Requires a format version bump, one tag per chunk, and more code to get right
+      (nonce derivation, last-chunk handling, short-read logic).
+    sources:
+      - "Hoang, Reyhanitabar, Rogaway, Vizár, 'Online Authenticated-Encryption and its Nonce-Reuse Misuse-Resistance' (CRYPTO 2015), STREAM"
+      - "age file format specification (chunked STREAM with ChaCha20-Poly1305)"
+      - "Google Tink streaming AEAD design"
+  streaming-gcm:
+    memory_bound: 3
+    auth_before_release: 0
+    truncation_detection: 3
+    reorder_detection: 3
+    cipher_agnostic: 0
+    format_stability: 3
+    implementation_simplicity: 2
+    notes: >-
+      Incremental AES-GCM producing byte-identical version-1 artifacts. Memory O(chunk)
+      with no format change, but decryption emits plaintext before the single final tag
+      is checked: the consumer must quarantine the output and discard it on failure, and
+      any mistake there means unauthenticated data is used. Only AES-GCM offers this
+      incremental API in `cryptography`; AES-GCM-SIV cannot stream at all (two passes).
+    sources:
+      - "Bellare, Namprempre; 'release of unverified plaintext' (Andreeva et al., ASIACRYPT 2014)"
+      - "cryptography.hazmat.primitives.ciphers.modes.GCM documentation (finalize_with_tag)"

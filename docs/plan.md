@@ -11,7 +11,7 @@ Producer
   │
   ├─ download small open model
   ├─ package model artifact
-  ├─ encrypt artifact (AEAD cipher selected in the evaluation phase; default AES-256-GCM)
+  ├─ encrypt artifact (AEAD cipher + mode from the evaluation; AES-256-GCM, chunked mode v2)
   ├─ sign encrypted artifact (Layer 2)
   └─ publish encrypted artifact + signature to Hugging Face Hub
 
@@ -136,8 +136,12 @@ Choose one small Hugging Face model. The model ID is configurable; two are used:
 
 Packaging is deterministic: sorted tar entries, mtime 0, uid/gid 0, no absolute paths,
 plus a `manifest.json` with model id, revision and per-file SHA-256.
-Encryption is one-shot in memory (sufficient for the demo model); a chunked format is
-documented as future work, not implemented.
+Two encryption modes share the header and registry: one-shot (format v1, whole
+artifact in memory, ~2x RAM) and chunked (format v2, STREAM construction, O(chunk)
+memory, each chunk authenticated before release). The evaluation phase compared them
+and selected **chunked as the production default** (see Section 6): LLM artifacts weigh
+GBs, so constant memory outweighs one-shot's simpler code. The producer selects the
+mode per artifact and the consumer dispatches on the authenticated version byte.
 
 Define a deterministic artifact format. Recommended approach:
 1. download model repository files needed for local loading;
@@ -165,12 +169,15 @@ Requirements:
 - no key material in logs;
 - one parametrised conformance test suite executed against every registered algorithm.
 
-Conceptual format:
+Conceptual formats:
 
 ```text
-magic | version | cipher_id | nonce_len   (header, used as AAD)
-nonce
-ciphertext + authentication tag
+v1 (one-shot):  magic | 1 | cipher_id | nonce_len | nonce            (header = AAD)
+                ciphertext + tag
+
+v2 (chunked):   magic | 2 | cipher_id | prefix_len | nonce_prefix | chunk_size
+                chunk_0 | chunk_1 | ... | chunk_last
+                nonce_i = prefix || counter || last_flag ; aad_i = header || counter || last_flag
 ```
 
 Do not invent custom cryptography primitives; use mature libraries (`cryptography`,
@@ -183,7 +190,10 @@ Tests:
 - modified header (including `cipher_id` swap) fails;
 - malformed header/input fails;
 - nonce handling is correct (unique per call, correct length);
-- non-production algorithms are rejected by default.
+- non-production algorithms are rejected by default;
+- chunked: truncation at a chunk boundary, mid-chunk truncation, chunk reordering,
+  chunk spliced from another artifact, chunk-size tamper, and no plaintext written
+  before a failing chunk.
 
 ## Milestone 2b — Crypto evaluation phase
 
@@ -193,7 +203,9 @@ consumer on top of the chosen defaults. Lives in the separate `benchmarks/` uv p
 Candidates:
 - ciphers: AES-256-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305 (PyNaCl), AES-256-GCM-SIV,
   AES-CBC+HMAC (benchmark-only negative example, no native AEAD);
-- signatures: Ed25519, ECDSA P-256, RSA-PSS 3072/4096, ML-DSA (post-quantum, if available).
+- signatures: Ed25519, ECDSA P-256, RSA-PSS 3072/4096, ML-DSA (post-quantum, if available);
+- encryption modes: one-shot (v1), chunked (v2), and streaming AES-GCM with v1 bytes
+  (benchmark-only negative example: releases plaintext before authentication).
 
 Quantitative metrics:
 - encrypt/decrypt throughput (MB/s) at 1 MiB, 16 MiB and the real model artifact;
@@ -202,23 +214,29 @@ Quantitative metrics:
   every correct cipher scores ≈8 bits/byte; it detects implementation mistakes, it does
   not rank security);
 - tamper check (one flipped byte must fail);
-- signer keygen/sign/verify time, public key and signature sizes.
+- signer keygen/sign/verify time, public key and signature sizes;
+- per mode, file to file: throughput, peak RSS of encrypt and of decrypt (fresh process
+  each, `VmHWM`), overhead, whether plaintext is released before authentication.
 
 Qualitative scorecard (0–3, each row with a cited source):
 - AEAD, nonce-misuse resistance, random-nonce collision bound;
 - hardware acceleration dependency (AES-NI);
 - standardisation (RFC/NIST/FIPS), library maturity;
-- post-quantum resistance; determinism of signatures.
+- post-quantum resistance; determinism of signatures;
+- modes: memory bound, authentication before release, truncation/reorder detection,
+  cipher agnostic, format stability, implementation simplicity.
 
 Deliverables:
 - `benchmarks/notebooks/crypto_evaluation.ipynb` with tables and charts;
 - `uv run bench export` writing `docs/crypto-evaluation.md` as an ADR (context, candidates,
   measurements, decision, consequences);
+- `docs/crypto-decision.md`: plain-language summary of the decisions in Spanish;
 - `DEFAULT_CIPHER` / `DEFAULT_SIGNER` recorded in the registry.
 
 Acceptance:
 - notebook runs end to end from a clean `uv sync`;
-- the selected defaults are defended with numbers and cited properties.
+- the selected defaults are defended with numbers and cited properties;
+- the chosen encryption mode (chunked) is justified for multi-GB LLM artifacts.
 
 ## Milestone 3 — Layer 1 producer
 
@@ -336,7 +354,7 @@ Important design point:
   replace both artifact and public key);
 - verification protects authenticity/integrity, not confidentiality;
 - the signing scheme is selected through the registry; the default comes from the
-  evaluation phase (expected: Ed25519).
+  evaluation phase (Ed25519, see `docs/crypto-evaluation.md`).
 
 ## Milestone 6 — Kubernetes end-to-end verification
 
@@ -470,25 +488,39 @@ client and `bert-tiny`. The kind smoke test is a manual workflow.
 
 Be ready to explain:
 
-### Why the selected cipher (expected: AES-256-GCM)?
+### Why the selected cipher (AES-256-GCM)?
 - efficient symmetric encryption for model artifacts;
 - authenticated encryption;
 - detects tampering during decryption;
 - mature standard library support;
 - measured against ChaCha20-Poly1305, XChaCha20-Poly1305, AES-GCM-SIV and CBC+HMAC in
-  `docs/crypto-evaluation.md`.
+  `docs/crypto-evaluation.md`; ranked #1 (4.8/5.0) in the weighted ranking.
 
-### Why the selected signer (expected: Ed25519)?
+### Why the selected signer (Ed25519)?
 - compact signatures and keys;
 - simple API;
 - fast verification/signing;
 - appropriate for artifact signing in a PoC;
-- measured against ECDSA P-256, RSA-PSS and ML-DSA in `docs/crypto-evaluation.md`.
+- measured against ECDSA P-256, RSA-PSS and ML-DSA in `docs/crypto-evaluation.md`;
+  ranked #1 (4.4/5.0) in the weighted ranking.
 
 ### Why a factory/registry instead of hardcoding one algorithm?
 - makes the evaluation reproducible and the choice replaceable;
 - the algorithm id is authenticated in the header, so agility does not open a downgrade path;
 - the consumer never guesses: unknown or non-production ids abort.
+
+### Why chunked mode over one-shot?
+- one-shot was the top scorer (18 vs 17) but only on simplicity and format stability;
+  its memory grows with the artifact (~2x RAM), which is not viable for multi-GB LLM weights;
+- chunked keeps memory flat at O(chunk) for any artifact size, gives the same security
+  guarantees (per-chunk authentication before release, truncation and reordering detection)
+  and measured no speed penalty file-to-file (in practice faster, avoiding huge buffers);
+- the consumer dispatches on the authenticated version byte, so one-shot remains available
+  for small models on machines with spare RAM;
+- streaming-gcm was rejected: it releases plaintext before authentication and only works
+  with AES-GCM;
+- full numbers and rationale in `docs/crypto-evaluation.md`; plain-language summary in
+  `docs/crypto-decision.md`.
 
 ### Why a shared crypto package?
 - see Section 2: format and registry must be identical on both sides; no Hub/K8s logic inside.
@@ -523,8 +555,9 @@ The mandatory submission is considered complete when:
 - [ ] Producer and consumer are separate uv projects.
 - [ ] Both have independent Dockerfiles.
 - [ ] Small Hugging Face model is selected and documented.
-- [ ] Model artifact is encrypted with the AEAD cipher selected in the evaluation (AES-256-GCM expected).
+- [ ] Model artifact is encrypted with the AEAD cipher selected in the evaluation (AES-256-GCM) using chunked mode (format v2).
 - [ ] Crypto evaluation notebook runs and `docs/crypto-evaluation.md` justifies the cipher and signer.
+- [ ] Encryption mode decision (chunked) is documented and defensible.
 - [ ] Encrypted artifact is published to Hugging Face Hub.
 - [ ] Kubernetes Secret supplies the Layer 1 decryption key.
 - [ ] Consumer downloads, decrypts, restores, and loads the model.

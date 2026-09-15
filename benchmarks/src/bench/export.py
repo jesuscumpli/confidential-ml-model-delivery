@@ -50,9 +50,20 @@ def _deviations(best_cipher: str, best_signer: str) -> str:
     return "\n\n".join(lines)
 
 
-def render(cipher_results: pd.DataFrame, signer_results: pd.DataFrame) -> str:
+def render(
+    cipher_results: pd.DataFrame, signer_results: pd.DataFrame, mode_results: pd.DataFrame
+) -> str:
     cipher_card, signer_card = scorecard.cipher_scorecard(), scorecard.signer_scorecard()
     cipher_notes, signer_notes = scorecard.notes()
+    mode_card, mode_notes = scorecard.mode_scorecard(), scorecard.mode_notes()
+    mode_view = mode_results.copy()
+    mode_view["size_mib"] = mode_view.pop("size_bytes") / (1 << 20)
+    chunk_kib = int(mode_results["chunk_bytes"].iloc[0]) >> 10
+    mode_columns = [
+        "mode", "cipher", "size_mib", "encrypt_mib_s", "decrypt_mib_s",
+        "peak_rss_encrypt_mib", "peak_rss_decrypt_mib", "overhead_bytes",
+        "plaintext_released_before_auth",
+    ]  # fmt: skip
     cipher_rank = ranking.rank(cipher_results, cipher_card, ranking.CIPHER_WEIGHTS, key="cipher")
     signer_rank = ranking.rank(signer_results, signer_card, ranking.SIGNER_WEIGHTS, key="scheme")
 
@@ -109,6 +120,14 @@ non-random nonce or ECB-like structure), nothing more.
 
 {_md(signer_results[signer_columns], index=False)}
 
+### Encryption modes: one-shot vs chunked vs streaming (chunk {chunk_kib} KiB)
+
+{_md(mode_view[mode_columns], index=False)}
+
+Peak memory is the RSS growth of a fresh process doing one file-to-file operation.
+One-shot grows with the artifact (input plus output buffer); the two streaming modes
+stay flat at a few MiB whatever the size.
+
 ## Security scorecard (0 = unacceptable, 3 = strong)
 
 ### Ciphers
@@ -118,6 +137,10 @@ non-random nonce or ECB-like structure), nothing more.
 ### Signature schemes
 
 {_md(signer_card)}
+
+### Encryption modes
+
+{_md(mode_card)}
 
 ## Weighted ranking
 
@@ -135,6 +158,21 @@ Weights (signers): {dict(ranking.SIGNER_WEIGHTS)}.
 - Signature scheme: `{registry.DEFAULT_SIGNER}` — top-ranked candidate: `{best_signer}`.
 
 {deviations}
+
+### Encryption mode
+
+- Both `one-shot` (v1) and `chunked` (v2) are production-safe: every byte of plaintext
+  is authenticated before release, and both detect truncation and reordering.
+- Choose **one-shot** when simplicity matters more than memory: one AEAD call, no
+  chunk logic, ~2x the artifact in RAM. Adequate for the demo model.
+- Choose **chunked** when memory must not scale with the artifact (multi-GB weights,
+  small consumer pods): O(chunk) memory, one 16-byte tag per chunk, and — measured
+  above — no throughput penalty file-to-file.
+- **streaming-gcm** is rejected: same memory benefit as chunked, but plaintext is
+  released before authentication and it works with AES-GCM only. It is kept in the
+  evaluation as the documented negative example.
+- The consumer selects the decryptor from the authenticated version byte, so the
+  producer can switch modes per artifact without a consumer change.
 
 ## Consequences
 
@@ -155,9 +193,17 @@ Weights (signers): {dict(ranking.SIGNER_WEIGHTS)}.
 {_sources_section(cipher_notes)}
 ### Signature schemes
 
-{_sources_section(signer_notes)}"""
+{_sources_section(signer_notes)}
+### Encryption modes
+
+{_sources_section(mode_notes)}"""
 
 
-def write(cipher_results: pd.DataFrame, signer_results: pd.DataFrame, target: Path) -> None:
+def write(
+    cipher_results: pd.DataFrame,
+    signer_results: pd.DataFrame,
+    mode_results: pd.DataFrame,
+    target: Path,
+) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(render(cipher_results, signer_results), encoding="utf-8")
+    target.write_text(render(cipher_results, signer_results, mode_results), encoding="utf-8")

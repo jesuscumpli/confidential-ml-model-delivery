@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from bench import ciphers, export, signers
+from bench import ciphers, export, modes, signers
 from bench.metrics import MIB
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -27,15 +27,23 @@ def _run(args: argparse.Namespace) -> None:
     cipher_frame.to_csv(args.results / "ciphers.csv", index=False)
     signer_frame = signers.run(int(args.message_size * MIB), repeats=args.repeats)
     signer_frame.to_csv(args.results / "signers.csv", index=False)
-    print(cipher_frame.to_string(index=False))
-    print()
-    print(signer_frame.to_string(index=False))
+    mode_frame = modes.run(
+        [int(s * MIB) for s in args.mode_sizes],
+        repeats=args.repeats,
+        artifact_path=args.artifact,
+        measure_memory=not args.no_memory,
+    )
+    mode_frame.to_csv(args.results / "modes.csv", index=False)
+    for frame in (cipher_frame, signer_frame, mode_frame):
+        print(frame.to_string(index=False))
+        print()
 
 
 def _export(args: argparse.Namespace) -> None:
     cipher_frame = pd.read_csv(args.results / "ciphers.csv")
     signer_frame = pd.read_csv(args.results / "signers.csv")
-    export.write(cipher_frame, signer_frame, args.out)
+    mode_frame = pd.read_csv(args.results / "modes.csv")
+    export.write(cipher_frame, signer_frame, mode_frame, args.out)
     print(f"wrote {args.out}")
 
 
@@ -46,6 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="measure ciphers and signers, write CSVs")
     run.add_argument("--sizes", type=float, nargs="+", default=[1, 16], help="MiB per input")
     run.add_argument("--message-size", type=float, default=16, help="MiB signed per scheme")
+    run.add_argument(
+        "--mode-sizes", type=float, nargs="+", default=[16, 64, 256],
+        help="MiB per input for the one-shot vs chunked vs streaming comparison",
+    )  # fmt: skip
     run.add_argument("--repeats", type=int, default=5)
     run.add_argument("--artifact", type=Path, help="real artifact to benchmark as well")
     run.add_argument("--no-memory", action="store_true", help="skip subprocess memory probes")

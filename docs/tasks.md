@@ -16,6 +16,16 @@ Decisions already taken (2026-09-15):
 - Evaluation lives in a separate uv project `benchmarks/` (Jupyter notebook + CLI script exporting `docs/crypto-evaluation.md`).
 - Ciphers under evaluation: AES-256-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305 (PyNaCl), AES-256-GCM-SIV, AES-CBC+HMAC (benchmark-only, marked insecure).
 - Signatures under evaluation: Ed25519, ECDSA P-256, RSA-PSS 3072/4096, ML-DSA (if available).
+- **Selected cipher: `aes-256-gcm`** (top of the weighted ranking; ranked #1).
+- **Selected signer: `ed25519`** (top of the weighted ranking; ranked #1).
+- **Selected encryption mode: chunked (format v2)** as the production default. Rationale:
+  one-shot scored higher (18 vs 17) only on simplicity/format stability, but its memory
+  grows with the artifact (~2x RAM) and LLM weights are multi-GB. Chunked keeps memory
+  flat at O(chunk), matches one-shot's security guarantees, and showed no throughput
+  penalty file-to-file. streaming-gcm was rejected (releases plaintext before auth).
+  Producer/consumer code and the demo must default to chunked; one-shot stays available
+  per artifact for small models. See `docs/crypto-evaluation.md` and (Spanish summary)
+  `docs/crypto-decision.md`.
 
 ---
 
@@ -43,6 +53,8 @@ Decisions already taken (2026-09-15):
 ## M2 — Additional ciphers and signers (for evaluation)
 
 - [x] `ciphers/chacha20_poly1305.py`, `ciphers/aes_gcm_siv.py` (skip with clear error if OpenSSL lacks it).
+- [x] Format v2 (chunked, STREAM construction): `encrypt_stream` / `decrypt_stream`, dispatch on version byte; negative tests for truncation, reordering, splicing, chunk-size tamper.
+- [x] Zero-copy paths: `encrypt_parts` (no header concat), `memoryview` slice on decrypt, `Buffer` inputs.
 - [x] `ciphers/xchacha20_poly1305.py` behind `[bench]` extra (PyNaCl).
 - [x] `ciphers/aes_cbc_hmac.py` behind `[bench]`, flagged `production_safe = False` in the registry.
 - [x] `signers/base.py`: `Signer`/`Verifier` protocols, signature envelope (`scheme_id | key_fingerprint | signature`).
@@ -53,11 +65,13 @@ Decisions already taken (2026-09-15):
 ## M3 — Crypto evaluation phase
 
 - [x] `benchmarks/src/bench/`: runners for cipher throughput (1 MiB, 16 MiB, real artifact), peak memory, ciphertext overhead, entropy/byte-histogram, tamper check; signer keygen/sign/verify timing and sizes.
+- [x] Mode benchmark (`modes.py`): one-shot vs chunked vs streaming-gcm (bench-only, v1 bytes, plaintext released before auth) file to file; peak RSS per operation in a fresh process via `VmHWM` (not `ru_maxrss`, which inherits the parent's RSS on Linux).
 - [x] Qualitative security scorecard (`scorecard.yaml`): AEAD, nonce-misuse resistance, nonce collision bound, AES-NI dependency, standardisation (RFC/FIPS), library maturity, PQ resistance. Each row cites a source.
 - [x] `benchmarks/notebooks/crypto_evaluation.ipynb`: tables + charts, one combined ranking per category.
 - [x] `uv run bench export` writes `docs/crypto-evaluation.md` (ADR-style: context, candidates, measurements, decision, consequences).
-- [ ] Record the selected default cipher and signer in the registry (`DEFAULT_CIPHER`, `DEFAULT_SIGNER`).
-- Acceptance: notebook runs end to end from a clean `uv sync`; markdown export committed; decision defended with numbers.
+- [x] Record the selected default cipher and signer in the registry (`DEFAULT_CIPHER = aes-256-gcm`, `DEFAULT_SIGNER = ed25519`).
+- [x] Write `docs/crypto-decision.md` with plain-language rationale and the chunked-mode decision.
+- Acceptance: notebook runs end to end from a clean `uv sync`; markdown export committed; decision defended with numbers; chunked mode justified for multi-GB LLM artifacts.
 
 ## M4 — Model packaging (producer)
 
@@ -68,7 +82,7 @@ Decisions already taken (2026-09-15):
 
 ## M5 — Producer CLI + Hub publish + image
 
-- [ ] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env/flags: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name.
+- [ ] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env/flags: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
 - [ ] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` and `scripts/create-k8s-secret.sh`.
 - [ ] Hub client wrapper with an interface so integration tests can use a fake.
 - [ ] Dockerfile hardened: non-root, no cache, `uv sync --frozen --no-dev`.
@@ -78,7 +92,7 @@ Decisions already taken (2026-09-15):
 ## M6 — Consumer locally
 
 - [ ] `KeyProvider` abstraction: `FileKeyProvider` (mounted Secret), `EnvKeyProvider`; `CdhKeyProvider` stub documented for Layer 3.
-- [ ] Flow: download → (verify, M8) → decrypt → safe tar extraction to temp dir (path traversal guard) → load with `AutoModelForMaskedLM` + tokenizer → fill-mask inference → print result.
+- [ ] Flow: download → (verify, M8) → decrypt (dispatch on version byte; **chunked v2 default**, one-shot v1 still supported) → safe tar extraction to temp dir (path traversal guard) → load with `AutoModelForMaskedLM` + tokenizer → fill-mask inference → print result.
 - [ ] Every failure maps to a distinct non-zero exit code; no secrets or key material in logs.
 - [ ] Tests: decrypt failures, unsafe tar members, model load with `bert-tiny` fixture (marked slow), exit codes.
 - [ ] Dockerfile (non-root, CPU-only torch to keep the image small).
@@ -110,7 +124,7 @@ Decisions already taken (2026-09-15):
 ## M10 — Documentation
 
 - [ ] `docs/architecture.md`: components, data flow, trust boundaries, deployment topology (Mermaid diagrams).
-- [ ] `docs/security.md`: threat model, properties, assumptions, key lifecycle, failure modes, what L1/L2 do not protect, why the chosen cipher/signer (link to `docs/crypto-evaluation.md`), remaining risks.
+- [ ] `docs/security.md`: threat model, properties, assumptions, key lifecycle, failure modes, what L1/L2 do not protect, why the chosen cipher/signer and chunked mode (link to `docs/crypto-evaluation.md` and `docs/crypto-decision.md`), remaining risks.
 - [ ] `docs/layers.md`: L1/L2 implementation, L3 design + feasibility (KVM requirement, CoCo operator, Trustee KBS, `CdhKeyProvider` design, permissive policy caveats).
 - [ ] `README.md`: everything listed in `docs/plan.md` Section 7, followed end to end by a clean checkout.
 - [ ] Tick every box in `docs/plan.md` Section 7.

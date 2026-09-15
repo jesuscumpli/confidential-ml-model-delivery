@@ -2,7 +2,8 @@
 
 Every cipher takes the caller's nonce and additional authenticated data explicitly:
 nonce generation and header binding are decided by the artifact layer, not by the
-primitive, so all ciphers behave identically under the conformance tests.
+primitive, so all ciphers behave identically under the conformance tests. Inputs are
+any buffer (bytes, bytearray, memoryview) so callers can pass slices without copying.
 """
 
 from __future__ import annotations
@@ -11,6 +12,9 @@ import os
 from typing import Protocol, runtime_checkable
 
 from confidential_crypto.errors import InvalidKeyError, InvalidNonceError
+
+# Same alias as cryptography.utils.Buffer: what the OpenSSL backend accepts without copying.
+Buffer = bytes | bytearray | memoryview
 
 
 @runtime_checkable
@@ -28,11 +32,15 @@ class AeadCipher(Protocol):
         """True when the backend supports this cipher in the current environment."""
         ...
 
-    def encrypt(self, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes) -> bytes:
+    def ciphertext_size(self, plaintext_size: int) -> int:
+        """Exact ciphertext length (tag included) for a plaintext of the given length."""
+        ...
+
+    def encrypt(self, key: bytes, nonce: bytes, plaintext: Buffer, aad: bytes) -> bytes:
         """Return ciphertext with the authentication tag appended."""
         ...
 
-    def decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
+    def decrypt(self, key: bytes, nonce: bytes, ciphertext: Buffer, aad: bytes) -> bytes:
         """Return plaintext; raise DecryptionError when authentication fails."""
         ...
 

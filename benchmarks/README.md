@@ -25,4 +25,9 @@ Notes:
 - Peak memory is measured in a subprocess per (cipher, size) so native allocations
   count; `--no-memory` skips it.
 - Entropy and chi-square are sanity checks only; they carry no weight in the ranking.
+- Mode comparison (`--mode-sizes`, default 16/64/256 MiB): one-shot (v1) vs chunked (v2)
+  vs streaming AES-GCM (bench-only negative example). Inputs live on disk; only the
+  one-shot mode needs ~2x the size in RAM, so 256 MiB is safe on any laptop.
+- `src/bench/streaming_gcm.py` is deliberately not in the shared package: it releases
+  plaintext before the tag is verified.
 - Strip notebook outputs before committing: `uv run nbstripout notebooks/*.ipynb`.

@@ -24,7 +24,7 @@ benchmarks/                    # crypto evaluation: runners + Jupyter notebook
 tests/integration/             # end-to-end integration tests against both services
 k8s/                           # Kubernetes manifests
 scripts/                       # helper scripts (check.sh runs all quality gates)
-docs/                          # plan, tasks, architecture, security, layers docs
+docs/                          # plan, tasks, decision records, architecture, security, layers docs
 ```
 
 Producer and consumer are separate projects on purpose: independent dependency
@@ -36,10 +36,27 @@ format and algorithm registry must be identical on both sides. It contains no
 Hub, Kubernetes or model-loading code. Algorithms used only by the evaluation
 phase live behind its `bench` extra and never ship in service images.
 
+## Crypto evaluation decisions
+
+The algorithms were measured in `benchmarks/` and the results justify the registry
+defaults; the formal record is `docs/crypto-evaluation.md` and a plain-language
+Spanish summary is `docs/crypto-decision.md`.
+
+- Cipher: `aes-256-gcm` (top-ranked; fastest and most standard, nonce risk controllable).
+- Signer: `ed25519` (top-ranked; deterministic, constant-time, minimal signatures).
+- Encryption mode: **chunked (format v2) is the production default** because LLM
+  artifacts are multi-GB and one-shot would need ~2x the artifact in RAM. Chunked keeps
+  memory at O(chunk), matches one-shot's security guarantees, and measured no throughput
+  penalty file-to-file. `streaming-gcm` was rejected (releases plaintext before auth).
+- The consumer dispatches on the authenticated version byte, so one-shot (v1) remains
+  available per artifact for small models; the producer config selects the mode.
+
 ## Coding standards
 
 - Everything must be written in English: identifiers, strings, comments,
   commit messages, and documentation.
+  Exception: user-facing documentation explicitly requested in Spanish by the
+  maintainers (e.g. `docs/crypto-decision.md`) stays in Spanish.
 - Follow good programming practices: type hints, small focused functions,
   explicit error handling, no dead code.
 - Do not add excessive comments. Only short essential comments that explain

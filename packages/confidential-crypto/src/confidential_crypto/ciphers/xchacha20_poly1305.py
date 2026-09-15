@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from types import ModuleType
 
-from confidential_crypto.ciphers.base import check_key, check_nonce
+from confidential_crypto.ciphers.base import Buffer, check_key, check_nonce
 from confidential_crypto.errors import DecryptionError, UnavailableAlgorithmError
 
 
@@ -33,26 +33,32 @@ class XChaCha20Poly1305:
     def is_available(self) -> bool:
         return self._nacl is not None
 
+    def ciphertext_size(self, plaintext_size: int) -> int:
+        return plaintext_size + self.tag_size
+
     def _backend(self) -> ModuleType:
         if self._nacl is None:
             raise UnavailableAlgorithmError(f"{self.name} requires the 'bench' extra (PyNaCl)")
         return self._nacl
 
-    def encrypt(self, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes) -> bytes:
+    def encrypt(self, key: bytes, nonce: bytes, plaintext: Buffer, aad: bytes) -> bytes:
         check_key(self, key)
         check_nonce(self, nonce)
         out: bytes = self._backend().crypto_aead_xchacha20poly1305_ietf_encrypt(
-            plaintext, aad, nonce, key
+            bytes(plaintext),
+            aad,
+            nonce,
+            key,  # PyNaCl bindings accept bytes only
         )
         return out
 
-    def decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
+    def decrypt(self, key: bytes, nonce: bytes, ciphertext: Buffer, aad: bytes) -> bytes:
         check_key(self, key)
         check_nonce(self, nonce)
         nacl = self._backend()
         try:
             out: bytes = nacl.crypto_aead_xchacha20poly1305_ietf_decrypt(
-                ciphertext, aad, nonce, key
+                bytes(ciphertext), aad, nonce, key
             )
         except (self._auth_error, ValueError) as exc:  # ValueError: shorter than the tag
             raise DecryptionError(f"{self.name}: authentication failed") from exc

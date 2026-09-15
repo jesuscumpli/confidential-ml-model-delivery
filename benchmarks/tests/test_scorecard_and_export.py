@@ -66,6 +66,32 @@ def _fake_signer_results() -> pd.DataFrame:
     )
 
 
+def _fake_mode_results() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "mode": ["one-shot", "chunked", "streaming-gcm"],
+            "cipher": ["aes-256-gcm"] * 3,
+            "size_bytes": [64 << 20] * 3,
+            "chunk_bytes": [1 << 20] * 3,
+            "encrypt_mib_s": [500.0, 1000.0, 600.0],
+            "decrypt_mib_s": [550.0, 900.0, 800.0],
+            "peak_rss_encrypt_mib": [127.0, 2.5, 1.6],
+            "peak_rss_decrypt_mib": [127.0, 3.4, 1.7],
+            "overhead_bytes": [35, 1042, 35],
+            "plaintext_released_before_auth": [False, False, True],
+        }
+    )
+
+
+def test_mode_scorecard_covers_all_modes() -> None:
+    from bench import modes
+
+    card = scorecard.mode_scorecard()
+    assert set(card.index) == set(modes.MODES)
+    assert card.loc["streaming-gcm", "auth_before_release"] == 0
+    assert card.loc["chunked", "memory_bound"] == 3
+
+
 def test_ranking_orders_by_weighted_total() -> None:
     table = ranking.rank(
         _fake_cipher_results(),
@@ -79,9 +105,12 @@ def test_ranking_orders_by_weighted_total() -> None:
 
 def test_export_writes_complete_document(tmp_path: Path) -> None:
     target = tmp_path / "eval.md"
-    export.write(_fake_cipher_results(), _fake_signer_results(), target)
+    export.write(_fake_cipher_results(), _fake_signer_results(), _fake_mode_results(), target)
     text = target.read_text()
-    for heading in ("## Context", "## Measurements", "## Security scorecard", "## Decision"):
+    for heading in (
+        "## Context", "## Measurements", "### Encryption modes", "## Security scorecard",
+        "## Decision", "### Encryption mode",
+    ):  # fmt: skip
         assert heading in text
     assert registry.DEFAULT_CIPHER in text
     assert "Deviation" in text  # fake data ranks chacha20 above the default

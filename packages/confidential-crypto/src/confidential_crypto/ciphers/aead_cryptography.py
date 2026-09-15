@@ -8,13 +8,13 @@ from typing import Protocol
 from cryptography.exceptions import InvalidTag, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, AESGCMSIV, ChaCha20Poly1305
 
-from confidential_crypto.ciphers.base import check_key, check_nonce
+from confidential_crypto.ciphers.base import Buffer, check_key, check_nonce
 from confidential_crypto.errors import DecryptionError
 
 
 class _OpenSslAead(Protocol):
-    def encrypt(self, nonce: bytes, data: bytes, associated_data: bytes | None) -> bytes: ...
-    def decrypt(self, nonce: bytes, data: bytes, associated_data: bytes | None) -> bytes: ...
+    def encrypt(self, nonce: bytes, data: Buffer, associated_data: bytes | None) -> bytes: ...
+    def decrypt(self, nonce: bytes, data: Buffer, associated_data: bytes | None) -> bytes: ...
 
 
 class _CryptographyAead:
@@ -44,12 +44,15 @@ class _CryptographyAead:
             return False
         return True
 
-    def encrypt(self, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes) -> bytes:
+    def ciphertext_size(self, plaintext_size: int) -> int:
+        return plaintext_size + self.tag_size
+
+    def encrypt(self, key: bytes, nonce: bytes, plaintext: Buffer, aad: bytes) -> bytes:
         check_key(self, key)
         check_nonce(self, nonce)
         return self._factory(key).encrypt(nonce, plaintext, aad)
 
-    def decrypt(self, key: bytes, nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
+    def decrypt(self, key: bytes, nonce: bytes, ciphertext: Buffer, aad: bytes) -> bytes:
         check_key(self, key)
         check_nonce(self, nonce)
         try:

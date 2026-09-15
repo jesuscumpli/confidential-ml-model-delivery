@@ -56,6 +56,20 @@ def chi_square_uniformity(data: bytes) -> float:
     return float((((_byte_histogram(data) - expected) ** 2) / expected).sum())
 
 
+def peak_rss_mib() -> float:
+    """High-water RSS of this process from /proc, in MiB.
+
+    Not `getrusage().ru_maxrss`: on Linux an exec'd child inherits the parent's RSS
+    at fork time in that counter, so a large parent (a notebook kernel holding data)
+    would hide the child's own peak. `VmHWM` belongs to the current address space only.
+    """
+    with open("/proc/self/status", encoding="ascii") as status:
+        for line in status:
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) / 1024
+    raise RuntimeError("VmHWM not found in /proc/self/status")
+
+
 def peak_rss_mib_in_subprocess(module: str, *args: str) -> float:
     """Run `python -m module args...` and return its peak RSS in MiB.
 
