@@ -3,10 +3,10 @@ revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
@@ -224,6 +224,7 @@ dependencies = [
     { name = "confidential-crypto", extra = ["bench"] },
     { name = "jupyterlab" },
     { name = "matplotlib" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "psutil" },
     { name = "pyyaml" },
@@ -247,6 +248,7 @@ requires-dist = [
     { name = "confidential-crypto", extras = ["bench"], editable = "../packages/confidential-crypto" },
     { name = "jupyterlab", specifier = ">=4.3.0" },
     { name = "matplotlib", specifier = ">=3.9.0" },
+    { name = "numpy", specifier = ">=2.0.0" },
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "psutil", specifier = ">=6.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },

@@ -7,8 +7,9 @@ import statistics
 import subprocess
 import sys
 import time
-from collections import Counter
 from collections.abc import Callable
+
+import numpy as np
 
 MIB = 1 << 20
 
@@ -28,13 +29,19 @@ def throughput_mib_s(size_bytes: int, seconds: float) -> float:
     return (size_bytes / MIB) / seconds if seconds > 0 else math.inf
 
 
+def _byte_histogram(data: bytes) -> np.ndarray[tuple[int], np.dtype[np.int64]]:
+    """Single C-speed pass over a zero-copy view; no Python-level iteration."""
+    view = np.frombuffer(data, dtype=np.uint8)
+    return np.bincount(view, minlength=256)
+
+
 def shannon_entropy_bits_per_byte(data: bytes) -> float:
     """Entropy of the byte distribution; 8.0 is the maximum for uniform bytes."""
     if not data:
         return 0.0
-    counts = Counter(data)
-    total = len(data)
-    return -sum((c / total) * math.log2(c / total) for c in counts.values())
+    probabilities = _byte_histogram(data) / len(data)
+    nonzero = probabilities[probabilities > 0]
+    return float(-(nonzero * np.log2(nonzero)).sum())
 
 
 def chi_square_uniformity(data: bytes) -> float:
@@ -46,8 +53,7 @@ def chi_square_uniformity(data: bytes) -> float:
     if not data:
         return 0.0
     expected = len(data) / 256
-    counts = Counter(data)
-    return sum(((counts.get(b, 0) - expected) ** 2) / expected for b in range(256))
+    return float((((_byte_histogram(data) - expected) ** 2) / expected).sum())
 
 
 def peak_rss_mib_in_subprocess(module: str, *args: str) -> float:
