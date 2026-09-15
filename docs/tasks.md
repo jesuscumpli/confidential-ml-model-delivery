@@ -82,7 +82,8 @@ Decisions already taken (2026-09-15):
 
 ## M5 — Producer CLI + Hub publish + image
 
-- [ ] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env/flags: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
+- [ ] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
+- [ ] Typed configuration object with `pydantic-settings` (env > defaults): the CLI reads into it; sensitive fields (e.g. HF token) are `SecretStr`; the decryption key is loaded from a user-given path — never an env var — and the settings object is never dumped/printed wholesale.
 - [ ] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` and `scripts/create-k8s-secret.sh`.
 - [ ] Hub client wrapper with an interface so integration tests can use a fake.
 - [ ] Dockerfile hardened: non-root, no cache, `uv sync --frozen --no-dev`.
@@ -92,9 +93,10 @@ Decisions already taken (2026-09-15):
 ## M6 — Consumer locally
 
 - [ ] `KeyProvider` abstraction: `FileKeyProvider` (mounted Secret), `EnvKeyProvider`; `CdhKeyProvider` stub documented for Layer 3.
+- [ ] Typed settings via `pydantic-settings` (env): model/repo/artifact names, secret mount path, public key path; sensitive fields as `SecretStr`; settings never dumped to logs and never contain key bytes (key stays inside `KeyProvider`).
 - [ ] Flow: download → (verify, M8) → decrypt (dispatch on version byte; **chunked v2 default**, one-shot v1 still supported) → safe tar extraction to temp dir (path traversal guard) → load with `AutoModelForMaskedLM` + tokenizer → fill-mask inference → print result.
 - [ ] Every failure maps to a distinct non-zero exit code; no secrets or key material in logs.
-- [ ] Tests: decrypt failures, unsafe tar members, model load with `bert-tiny` fixture (marked slow), exit codes.
+- [ ] Tests: decrypt failures, unsafe tar members, model load with `bert-tiny` fixture (marked slow), exit codes, settings serialization (`model_dump`/`model_dump_json`) never contains key bytes or `SecretStr` values.
 - [ ] Dockerfile (non-root, CPU-only torch to keep the image small).
 - Acceptance: `uv run consumer` locally completes inference on the published artifact.
 

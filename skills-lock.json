@@ -19,6 +19,12 @@
       "skillPath": "skills/kubernetes-specialist/SKILL.md",
       "computedHash": "9c5eb68fc9d553ee29e745258bc6198563158c4b2c57436d63647e61010b5f0a"
     },
+    "pydantic": {
+      "source": "pydantic/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pydantic/SKILL.md",
+      "computedHash": "65f68dbab0f7e60bfd26998350d674a104848daf23311067e0829758a7cf6f91"
+    },
     "python-design-patterns": {
       "source": "wshobson/agents",
       "sourceType": "github",

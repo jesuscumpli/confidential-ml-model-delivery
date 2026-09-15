@@ -71,6 +71,14 @@ Spanish summary is `docs/crypto-decision.md`.
   positive and negative security paths.
 - Never commit secrets, keys, tokens, or decrypted model artifacts.
 - No key material in logs, error messages, or test fixtures.
+- Configuration: use `pydantic-settings` for typed settings from environment
+  variables in the services (`services/*`); mark sensitive fields as `SecretStr`;
+  never `model_dump`/print a settings object wholesale. Keep decryption key
+  material out of settings and out of env vars: it comes from a file-mounted
+  Kubernetes Secret through the consumer's `KeyProvider` (or a user-given path in
+  the producer), never from `pydantic-settings`.
+- Python packages: use `pydantic-settings` only in the services, never in
+  `packages/confidential-crypto` (the shared package stays dependency-light).
 
 ## Working with uv
 
