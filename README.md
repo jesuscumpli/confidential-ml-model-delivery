@@ -1,0 +1,67 @@
+# Confidential ML Model Delivery
+
+Confidential distribution of a Hugging Face ML model, as a proof-of-concept.
+
+A **producer** encrypts a model artifact (AES-256-GCM, Layer 1) and optionally
+signs it (Ed25519, Layer 2), then publishes it to the Hugging Face Hub. A
+**consumer** running in Kubernetes retrieves the artifact, verifies the
+signature, obtains the decryption key from a Kubernetes Secret, decrypts,
+restores and loads the model, and runs minimal inference.
+
+The authoritative specification lives in `docs/plan.md` and
+`docs/test_assignment.md`.
+
+## Repository layout
+
+```text
+services/producer/   # independent uv Python project (publishes artifacts)
+services/consumer/   # independent uv Python project (retrieves artifacts)
+tests/integration/   # end-to-end integration tests against both services
+k8s/                 # Kubernetes manifests
+scripts/             # helper scripts
+docs/                # plan, architecture, security, layers docs
+```
+
+## Status
+
+Work in progress. Milestones are tracked in `docs/plan.md` (Section 8); the
+bootstrap milestone (uv projects, lint/test baseline, Dockerfiles) is
+implemented. Nothing functional is published yet.
+
+## Prerequisites
+
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) 0.12.x or newer
+- Docker (for image builds)
+- Optionally a Kubernetes cluster for the consumer deployment (Layer 4+)
+
+## Local development
+
+Producer and consumer are independent uv projects; run commands from each
+service directory:
+
+```bash
+cd services/producer
+uv sync                 # install deps + dev deps
+uv run pytest           # run tests
+uv run ruff check       # lint
+uv run ruff format      # format
+uv run mypy src         # type check
+```
+
+Same commands apply in `services/consumer`.
+
+## Image build
+
+```bash
+docker build -t confidential-model-producer services/producer
+docker build -t confidential-model-consumer services/consumer
+```
+
+## Documentation
+
+- `docs/plan.md` — project plan and milestones.
+- `docs/test_assignment.md` — original assignment text.
+
+Architecture, security and layer documentation are added as the milestones
+complete (see `docs/plan.md` Section 7).
