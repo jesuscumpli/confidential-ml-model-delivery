@@ -11,7 +11,11 @@ dependencies = [
     "confidential-crypto",
     "cryptography>=44.0.0",
     "huggingface_hub>=0.30.0",
+    "pydantic-settings>=2.6.0",
 ]
+
+[project.scripts]
+producer = "producer.cli:main"
 
 [dependency-groups]
 dev = [
@@ -44,3 +48,5 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: needs network access or a real Hugging Face repository"]
+addopts = "-m 'not slow'"

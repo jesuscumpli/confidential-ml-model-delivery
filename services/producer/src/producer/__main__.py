@@ -1,11 +1,8 @@
-"""Bootstrap entry point, replaced by the real CLI at Milestone 3."""
+"""`python -m producer` entry point."""
 
-from producer import __version__
+import sys
 
-
-def main() -> None:
-    print(f"producer {__version__} — CLI not implemented yet")
-
+from producer.cli import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

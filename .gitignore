@@ -35,3 +35,4 @@ artifacts/
 # Notebooks and benchmark outputs
 .ipynb_checkpoints/
 benchmarks/results/
+secrets/

@@ -75,20 +75,25 @@ Decisions already taken (2026-09-15):
 
 ## M4 — Model packaging (producer)
 
-- [ ] `packaging.py`: download with `huggingface_hub.snapshot_download` (allow-list of files: config, tokenizer, weights), deterministic tar (sorted entries, mtime 0, uid/gid 0, no absolute paths).
-- [ ] Manifest inside the tar (`manifest.json`: model id, revision, file list + SHA-256).
-- [ ] Tests with a tiny fake model directory; reproducibility test (same input ⇒ same tar hash).
-- Acceptance: tar restored with Transformers loads `bert-tiny` locally.
+- [x] `packaging.py`: download with `huggingface_hub.snapshot_download` (allow-list of files: config, tokenizer, weights), deterministic tar (sorted entries, mtime 0, uid/gid 0, no absolute paths).
+- [x] Manifest inside the tar (`manifest.json`: model id, revision, file list + SHA-256).
+- [x] Tests with a tiny fake model directory; reproducibility test (same input ⇒ same tar hash).
+- Acceptance: tar restored with Transformers loads `bert-tiny` locally. Verified 2026-09-15
+  (fill-mask top-1 for "The capital of France is [MASK]."). Note for M6: `bert-tiny` ships
+  no `model_type` in `config.json` and no `tokenizer_config.json`, so with transformers 5.x
+  the consumer must load with explicit `BertForMaskedLM` / `BertTokenizer` (the `Auto*`
+  classes fail on the Hub copy too); `pytorch_model.bin` is its only weight file.
 
 ## M5 — Producer CLI + Hub publish + image
 
-- [ ] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
-- [ ] Typed configuration object with `pydantic-settings` (env > defaults): the CLI reads into it; sensitive fields (e.g. HF token) are `SecretStr`; the decryption key is loaded from a user-given path — never an env var — and the settings object is never dumped/printed wholesale.
-- [ ] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` and `scripts/create-k8s-secret.sh`.
-- [ ] Hub client wrapper with an interface so integration tests can use a fake.
-- [ ] Dockerfile hardened: non-root, no cache, `uv sync --frozen --no-dev`.
-- [ ] Tests: CLI argument validation, publish uses fake client, plaintext never written to the upload dir.
+- [x] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
+- [x] Typed configuration object with `pydantic-settings` (env > defaults): the CLI reads into it; sensitive fields (e.g. HF token) are `SecretStr`; the decryption key is loaded from a user-given path — never an env var — and the settings object is never dumped/printed wholesale.
+- [x] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` and `scripts/create-k8s-secret.sh`.
+- [x] Hub client wrapper with an interface so integration tests can use a fake.
+- [x] Dockerfile hardened: non-root, no cache, `uv sync --frozen --no-dev`.
+- [x] Tests: CLI argument validation, publish uses fake client, plaintext never written to the upload dir.
 - Acceptance: `model.enc` published to a test HF repo; repo contains only the encrypted artifact.
+  Verified 2026-09-15 against `jesuscumpli/confidential-ml-model` (`.gitattributes` + `model.enc`).
 
 ## M6 — Consumer locally
 
