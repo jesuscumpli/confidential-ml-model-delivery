@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
-from confidential_crypto import encrypt
+from confidential_crypto import encrypt, sign
 
 from consumer.cli.main import main
 from consumer.core.errors import (
@@ -17,7 +17,7 @@ from consumer.core.errors import (
     ExtractionError,
     ModelLoadError,
 )
-from tests.conftest import CIPHER, FakeArtifactSource, StaticKeyProvider, encrypt_bytes
+from tests.conftest import CIPHER, SIGNER, FakeArtifactSource, StaticKeyProvider, encrypt_bytes
 
 
 def test_default_repo_id_is_used(source: FakeArtifactSource, provider: StaticKeyProvider) -> None:
@@ -50,8 +50,13 @@ def test_download_failure_exit_code(provider: StaticKeyProvider) -> None:
     )
 
 
-def test_bad_package_exit_code(key: bytes, provider: StaticKeyProvider, tmp_path: Path) -> None:
-    source = FakeArtifactSource({"model.enc": encrypt_bytes(b"not a tar", key)}, tmp_path / "cache")
+def test_bad_package_exit_code(
+    key: bytes, signing_key: bytes, provider: StaticKeyProvider, tmp_path: Path
+) -> None:
+    blob = encrypt_bytes(b"not a tar", key)
+    source = FakeArtifactSource(
+        {"model.enc": blob, "model.sig": sign(blob, signing_key, SIGNER)}, tmp_path / "cache"
+    )
     assert (
         main(["--repo-id", "org/repo"], source=source, provider=provider)
         == ExtractionError.exit_code
@@ -63,7 +68,10 @@ def test_force_flag_reaches_the_source(
 ) -> None:
     code = main(["--repo-id", "org/repo", "--force"], source=source, provider=provider)
     assert code == ModelLoadError.exit_code
-    assert source.calls == [("org/repo", "model.enc", "main", True)]
+    assert source.calls == [
+        ("org/repo", "model.enc", "main", True),
+        ("org/repo", "model.sig", "main", True),
+    ]
 
 
 def test_model_load_failure_exit_code_and_cleanup(
@@ -78,7 +86,10 @@ def test_model_load_failure_exit_code_and_cleanup(
     assert code == ModelLoadError.exit_code
     assert (tmp_path / "work").stat().st_mode & 0o777 == 0o700
     assert sorted(p.name for p in (tmp_path / "work").iterdir()) == ["model", "model.tar"]
-    assert source.calls == [("org/repo", "model.enc", "main", False)]
+    assert source.calls == [
+        ("org/repo", "model.enc", "main", False),
+        ("org/repo", "model.sig", "main", False),
+    ]
 
 
 def test_temporary_work_dir_is_removed(
@@ -94,6 +105,7 @@ def test_help_lists_options_with_defaults(capsys: pytest.CaptureFixture[str]) ->
     out = capsys.readouterr().out  # rich wraps at terminal width: check fragments only
     assert "--key-source" in out
     assert "--force" in out
+    assert "--no-verify" in out
     assert "var/secrets/model.key" in out
     assert "CONSUMER_PROMPT" in out
 
@@ -132,11 +144,16 @@ def test_decrypt_logs_metrics_when_enabled(
 def test_decrypt_reports_one_shot_artifacts(
     package: bytes,
     key: bytes,
+    signing_key: bytes,
     provider: StaticKeyProvider,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    source = FakeArtifactSource({"model.enc": encrypt(package, key, CIPHER)}, tmp_path / "cache")
+    one_shot = encrypt(package, key, CIPHER)
+    source = FakeArtifactSource(
+        {"model.enc": one_shot, "model.sig": sign(one_shot, signing_key, SIGNER)},
+        tmp_path / "cache",
+    )
     with caplog.at_level(logging.INFO, logger="consumer.app.pipeline"):
         main(["--repo-id", "org/repo"], source=source, provider=provider)
     assert "aes-256-gcm, one-shot" in caplog.text

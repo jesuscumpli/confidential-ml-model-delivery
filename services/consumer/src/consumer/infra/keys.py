@@ -3,7 +3,8 @@ touches Layer 1 key bytes.
 
 `FileKeyProvider` reads the Kubernetes Secret mounted as a file (production path).
 `EnvKeyProvider` exists for local development only. `CdhKeyProvider` documents the
-Layer 3 design and is intentionally not implemented.
+Layer 3 design and is intentionally not implemented. `read_public_key` loads the
+Layer 2 verification key (not secret, but a trust anchor) from the mounted ConfigMap.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import os
 from pathlib import Path
 
 from confidential_crypto.errors import InvalidKeyError
-from confidential_crypto.keys import decode_symmetric_key, load_symmetric_key
+from confidential_crypto.keys import decode_symmetric_key, load_pem_key, load_symmetric_key
 
 from consumer.core.errors import ConfigError
 
@@ -28,6 +29,14 @@ class FileKeyProvider:
             return load_symmetric_key(self._path, key_size)
         except InvalidKeyError as exc:
             raise ConfigError(f"key file {self._path}: {exc}") from exc
+
+
+def read_public_key(path: Path) -> bytes:
+    """Layer 2 trust anchor: the PEM public key mounted from the ConfigMap."""
+    try:
+        return load_pem_key(path)
+    except InvalidKeyError as exc:
+        raise ConfigError(f"public key file {path}: {exc}") from exc
 
 
 class EnvKeyProvider:

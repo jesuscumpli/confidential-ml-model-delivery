@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import CommitOperationAdd, HfApi, snapshot_download
 from huggingface_hub.errors import HfHubHTTPError
 
 from producer.core.errors import HubError
@@ -40,16 +41,20 @@ class HfHubClient:
         except HfHubHTTPError as exc:
             raise HubError(f"cannot create or access {repo_id}: {_reason(exc)}") from exc
 
-    def upload(self, local_path: Path, repo_id: str, path_in_repo: str) -> str:
+    def upload(self, files: Mapping[str, Path], repo_id: str) -> str:
+        """One commit for artifact and signature: the Hub never shows a mismatched pair."""
+        names = ", ".join(sorted(files))
         try:
-            commit = self._api.upload_file(
-                path_or_fileobj=local_path,
-                path_in_repo=path_in_repo,
+            commit = self._api.create_commit(
                 repo_id=repo_id,
-                commit_message=f"Publish encrypted artifact {path_in_repo}",
+                operations=[
+                    CommitOperationAdd(path_in_repo=name, path_or_fileobj=path)
+                    for name, path in files.items()
+                ],
+                commit_message=f"Publish encrypted artifact ({names})",
             )
         except HfHubHTTPError as exc:
-            raise HubError(f"cannot upload {path_in_repo} to {repo_id}: {_reason(exc)}") from exc
+            raise HubError(f"cannot upload {names} to {repo_id}: {_reason(exc)}") from exc
         return str(commit.oid)
 
     def list_files(self, repo_id: str) -> list[str]:

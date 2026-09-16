@@ -25,6 +25,9 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert str(settings.key_path) == "var/secrets/model.key"
     assert "[MASK]" in settings.prompt
     assert settings.metrics is False
+    assert settings.verify_signature is True
+    assert settings.signature_name == "model.sig"
+    assert settings.signer == "ed25519"
 
 
 def test_token_masked_and_key_never_present(monkeypatch: pytest.MonkeyPatch, key: bytes) -> None:
@@ -46,9 +49,19 @@ def test_token_masked_and_key_never_present(monkeypatch: pytest.MonkeyPatch, key
 
 @pytest.mark.parametrize(
     "overrides",
-    [{"artifact_name": "../x"}, {"top_k": 0}, {"key_source": "vault"}],
-    ids=["traversal", "top_k", "key_source"],
+    [
+        {"artifact_name": "../x"},
+        {"artifact_name": "model.sig"},
+        {"top_k": 0},
+        {"key_source": "vault"},
+    ],
+    ids=["traversal", "signature_suffix", "top_k", "key_source"],
 )
 def test_invalid_values(overrides: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         ConsumerSettings(hub_repo_id="org/repo", **overrides)  # type: ignore[arg-type]
+
+
+def test_signature_name_derives_from_artifact_name() -> None:
+    settings = ConsumerSettings(hub_repo_id="org/repo", artifact_name="distilbert.v2.enc")
+    assert settings.signature_name == "distilbert.v2.sig"

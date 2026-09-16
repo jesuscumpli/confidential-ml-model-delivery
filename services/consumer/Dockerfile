@@ -34,7 +34,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     HF_HOME=/work/hf-cache \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
     CONSUMER_WORK_DIR=/work/consumer \
-    CONSUMER_KEY_PATH=/etc/model-key/key
+    CONSUMER_KEY_PATH=/etc/model-key/key \
+    CONSUMER_PUBLIC_KEY_PATH=/etc/model-public-key/signing.pub
 
 USER app
 WORKDIR /work

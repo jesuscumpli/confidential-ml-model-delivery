@@ -1,4 +1,5 @@
-"""`producer` command line: gen-key, package, encrypt, publish, run and config.
+"""`producer` command line: gen-key, gen-signing-keypair, package, encrypt, sign,
+publish, run and config.
 
 Every option is optional: environment variables (`PRODUCER_*`) supply defaults and
 explicit flags override them. `run --interactive` asks for each value instead.
@@ -22,7 +23,7 @@ from producer.app import pipeline
 from producer.core.errors import ConfigError, ProducerError
 from producer.core.ports import HubClient
 from producer.infra.hub import HfHubClient
-from producer.infra.keys import write_new_key
+from producer.infra.keys import write_new_key, write_new_signing_keypair
 from producer.models.encryption import EncryptionMode
 from producer.models.settings import ProducerSettings
 
@@ -52,6 +53,7 @@ class State:
 
 _MODEL = "Model"
 _ENCRYPTION = "Encryption"
+_SIGNING = "Signing"
 _HUB = "Hub"
 _OUTPUT = "Output"
 
@@ -60,9 +62,19 @@ def _cipher_names() -> list[str]:
     return [c.name for c in registry.available_ciphers()]
 
 
+def _signer_names() -> list[str]:
+    return [s.name for s in registry.available_signers()]
+
+
 def _validate_cipher(value: str | None) -> str | None:
     if value is not None and value not in _cipher_names():
         raise typer.BadParameter(f"{value!r} is not one of {', '.join(_cipher_names())}")
+    return value
+
+
+def _validate_signer(value: str | None) -> str | None:
+    if value is not None and value not in _signer_names():
+        raise typer.BadParameter(f"{value!r} is not one of {', '.join(_signer_names())}")
     return value
 
 
@@ -144,6 +156,35 @@ Cipher = Annotated[
         callback=_validate_cipher,
     ),
 ]
+SigningKeyPath = Annotated[
+    Path | None,
+    _option(
+        "--signing-key-path",
+        "-s",
+        field="signing_key_path",
+        text="PEM private signing key.",
+        panel=_SIGNING,
+    ),
+]
+Signer = Annotated[
+    str | None,
+    _option(
+        "--signer",
+        field="signer",
+        text=f"Signature scheme: {', '.join(_signer_names())}.",
+        panel=_SIGNING,
+        callback=_validate_signer,
+    ),
+]
+Sign = Annotated[
+    bool | None,
+    _option(
+        "--sign/--no-sign",
+        field="sign",
+        text="Sign the artifact and publish the signature (Layer 2).",
+        panel=_SIGNING,
+    ),
+]
 Metrics = Annotated[
     bool | None,
     _option(
@@ -155,7 +196,12 @@ Metrics = Annotated[
 ]
 ArtifactName = Annotated[
     str | None,
-    _option("--artifact-name", field="artifact_name", text="Encrypted file name.", panel=_OUTPUT),
+    _option(
+        "--artifact-name",
+        field="artifact_name",
+        text="Encrypted file name; its signature is <stem>.sig.",
+        panel=_OUTPUT,
+    ),
 ]
 WorkDir = Annotated[
     Path | None,
@@ -196,6 +242,27 @@ def gen_key(
     out.print(f"[green]wrote new {settings.cipher} key to {out_path}[/green]")
 
 
+@app.command("gen-signing-keypair")
+def gen_signing_keypair(
+    out_path: Annotated[
+        Path, typer.Option("--out", "-o", help="Private key PEM to create (mode 0600).")
+    ],
+    public_out: Annotated[
+        Path | None,
+        typer.Option("--public-out", help="Public key PEM to create [default: <out>.pub]."),
+    ] = None,
+    signer: Signer = None,
+) -> None:
+    """Write a fresh signing key pair; the public key goes to the consumer's ConfigMap."""
+    settings = _settings(signer=signer)
+    public_path = public_out or out_path.with_suffix(".pub")
+    write_new_signing_keypair(out_path, public_path, pipeline.resolve_signer(settings.signer))
+    out.print(
+        f"[green]wrote new {settings.signer} key pair: {out_path} (private), "
+        f"{public_path} (public)[/green]"
+    )
+
+
 @app.command()
 def package(
     ctx: typer.Context,
@@ -234,17 +301,37 @@ def encrypt(
 
 
 @app.command()
+def sign(
+    signing_key_path: SigningKeyPath = None,
+    signer: Signer = None,
+    artifact_name: ArtifactName = None,
+    work_dir: WorkDir = None,
+) -> None:
+    """Sign the encrypted artifact (Layer 2) into the upload directory."""
+    settings = _settings(
+        signing_key_path=signing_key_path,
+        signer=signer,
+        artifact_name=artifact_name,
+        work_dir=work_dir,
+    )
+    signature_path = pipeline.run_sign(settings)
+    out.print(f"[green]signature written to {signature_path}[/green]")
+
+
+@app.command()
 def publish(
     ctx: typer.Context,
     repo_id: RepoId = None,
     public: Public = None,
+    sign: Sign = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
 ) -> None:
-    """Upload the encrypted artifact to the Hub (nothing else is ever uploaded)."""
+    """Upload the encrypted artifact and its signature to the Hub (nothing else, ever)."""
     settings = _settings(
         hub_repo_id=repo_id,
         private_repo=_private(public),
+        sign=sign,
         artifact_name=artifact_name,
         work_dir=work_dir,
     )
@@ -263,12 +350,15 @@ def run(
     mode: Mode = None,
     chunk_size: ChunkSize = None,
     cipher: Cipher = None,
+    signing_key_path: SigningKeyPath = None,
+    signer: Signer = None,
+    sign: Sign = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
     metrics: Metrics = None,
     interactive: Interactive = False,
 ) -> None:
-    """Package, encrypt and publish in one go."""
+    """Package, encrypt, sign and publish in one go."""
     settings = _settings(
         model_id=model_id,
         model_revision=revision,
@@ -278,6 +368,9 @@ def run(
         encryption_mode=mode,
         chunk_size=chunk_size,
         cipher=cipher,
+        signing_key_path=signing_key_path,
+        signer=signer,
+        sign=sign,
         artifact_name=artifact_name,
         work_dir=work_dir,
         metrics=metrics,
@@ -299,6 +392,9 @@ def config(
     mode: Mode = None,
     chunk_size: ChunkSize = None,
     cipher: Cipher = None,
+    signing_key_path: SigningKeyPath = None,
+    signer: Signer = None,
+    sign: Sign = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
     metrics: Metrics = None,
@@ -313,6 +409,9 @@ def config(
         encryption_mode=mode,
         chunk_size=chunk_size,
         cipher=cipher,
+        signing_key_path=signing_key_path,
+        signer=signer,
+        sign=sign,
         artifact_name=artifact_name,
         work_dir=work_dir,
         metrics=metrics,
@@ -339,10 +438,14 @@ def _ask_settings(current: ProducerSettings) -> ProducerSettings:
         "artifact_name": typer.prompt("Artifact name", default=current.artifact_name),
         "work_dir": typer.prompt("Work directory", default=current.work_dir, type=Path),
         "key_path": _ask_key_path(current),
+        "sign": typer.confirm("Sign the artifact (Layer 2)?", default=current.sign),
         "metrics": typer.confirm("Log per-step metrics?", default=current.metrics),
     }
     if answers["encryption_mode"] == EncryptionMode.CHUNKED.value:
         answers["chunk_size"] = typer.prompt("Chunk size (bytes)", default=current.chunk_size)
+    if answers["sign"]:
+        answers["signer"] = _ask_choice("Signer", _signer_names(), current.signer)
+        answers["signing_key_path"] = _ask_signing_key_path(current, answers["signer"])
     return _settings(**answers)
 
 
@@ -362,6 +465,19 @@ def _ask_key_path(current: ProducerSettings) -> Path:
     if not path.exists() and typer.confirm(f"{path} does not exist. Generate a new key there?"):
         write_new_key(path, pipeline.resolve_cipher(current.cipher))
         out.print(f"[green]wrote new {current.cipher} key to {path}[/green]")
+    return path
+
+
+def _ask_signing_key_path(current: ProducerSettings, signer: str) -> Path:
+    """Ask where the private signing key lives and offer to create the pair when missing."""
+    default = current.signing_key_path or Path("var/secrets/signing.key")
+    path = Path(typer.prompt("Signing key file", default=default, type=Path))
+    if not path.exists() and typer.confirm(
+        f"{path} does not exist. Generate a new key pair there?"
+    ):
+        public_path = path.with_suffix(".pub")
+        write_new_signing_keypair(path, public_path, pipeline.resolve_signer(signer))
+        out.print(f"[green]wrote new {signer} key pair: {path}, {public_path}[/green]")
     return path
 
 
@@ -410,7 +526,10 @@ def _print_config(settings: ProducerSettings) -> None:
         "chunk size": f"{settings.chunk_size:,} bytes",
         "metrics": "on" if settings.metrics else "off",
         "key file": str(settings.key_path or "-"),
+        "signing": f"{settings.signer}" if settings.sign else "off",
+        "signing key": str(settings.signing_key_path or "-") if settings.sign else "-",
         "artifact": str(settings.artifact_path),
+        "signature": str(settings.signature_path) if settings.sign else "-",
         "work dir": str(settings.work_dir),
     }
     for name, value in rows.items():
@@ -419,10 +538,10 @@ def _print_config(settings: ProducerSettings) -> None:
 
 
 def _print_published(settings: ProducerSettings, commit: str) -> None:
-    out.print(
-        f"[green]published {settings.artifact_name} to {settings.hub_repo_id} "
-        f"at commit {commit}[/green]"
-    )
+    names = settings.artifact_name
+    if settings.sign:
+        names += f" + {settings.signature_name}"
+    out.print(f"[green]published {names} to {settings.hub_repo_id} at commit {commit}[/green]")
 
 
 def _configure_logging(verbose: bool) -> None:

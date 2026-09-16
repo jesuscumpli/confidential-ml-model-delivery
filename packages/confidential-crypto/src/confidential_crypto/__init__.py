@@ -11,7 +11,9 @@ from confidential_crypto.artifact import (
     encrypt_parts,
     encrypt_stream,
     sign,
+    sign_stream,
     verify,
+    verify_stream,
 )
 from confidential_crypto.registry import DEFAULT_CIPHER, DEFAULT_SIGNER, get_cipher, get_signer
 
@@ -29,5 +31,7 @@ __all__ = [
     "get_cipher",
     "get_signer",
     "sign",
+    "sign_stream",
     "verify",
+    "verify_stream",
 ]

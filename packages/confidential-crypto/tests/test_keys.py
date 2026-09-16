@@ -39,3 +39,15 @@ def test_fingerprint_ignores_line_endings() -> None:
     pem = b"-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----\n"
     crlf = pem.replace(b"\n", b"\r\n")
     assert keys.public_key_fingerprint(pem) == keys.public_key_fingerprint(crlf)
+
+
+def test_load_pem_key_accepts_pem_only(tmp_path: Path) -> None:
+    pem = registry.get_signer("ed25519").generate_private_key()
+    path = tmp_path / "signing.key"
+    path.write_bytes(pem)
+    assert keys.load_pem_key(path) == pem
+    (tmp_path / "raw.key").write_bytes(b"\x00" * 32)
+    with pytest.raises(InvalidKeyError, match="PEM"):
+        keys.load_pem_key(tmp_path / "raw.key")
+    with pytest.raises(InvalidKeyError, match="cannot read"):
+        keys.load_pem_key(tmp_path / "absent")

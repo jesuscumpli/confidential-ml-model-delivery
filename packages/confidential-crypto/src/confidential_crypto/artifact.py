@@ -12,6 +12,7 @@ primitive directly.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 from typing import BinaryIO
@@ -32,6 +33,9 @@ from confidential_crypto.signers.base import SignatureScheme
 
 DEFAULT_CHUNK_SIZE = 1 << 20
 _MAX_CHUNKS = 1 << 32
+_DIGEST_READ_SIZE = 1 << 20
+# Domain separation: the signed message can never be confused with a raw artifact.
+_SIGNED_MESSAGE_PREFIX = b"CMLS-v1-sha256\x00"
 
 
 def encrypt_parts(plaintext: bytes, key: bytes, cipher: AeadCipher) -> tuple[bytes, bytes]:
@@ -134,27 +138,51 @@ def _resolve(header: ArtifactHeader, allow_unsafe: bool) -> AeadCipher:
 
 
 def sign(artifact: bytes, private_key: bytes, scheme: SignatureScheme) -> bytes:
-    """Return a signature envelope over the full encrypted artifact bytes."""
-    fingerprint = public_key_fingerprint(scheme.public_key_from_private(private_key))
-    envelope = SignatureEnvelope(
-        scheme_id=scheme.scheme_id,
-        key_fingerprint=fingerprint,
-        signature=scheme.sign(private_key, artifact),
-    )
-    return envelope.encode()
+    """Return a signature envelope over an in-memory encrypted artifact."""
+    return sign_stream(io.BytesIO(artifact), private_key, scheme)
 
 
 def verify(
     artifact: bytes, envelope_bytes: bytes, public_key: bytes, scheme: SignatureScheme
 ) -> None:
-    """Verify `artifact` against its envelope using the expected scheme.
+    """Verify an in-memory artifact against its envelope; see `verify_stream`."""
+    verify_stream(io.BytesIO(artifact), envelope_bytes, public_key, scheme)
+
+
+def sign_stream(src: BinaryIO, private_key: bytes, scheme: SignatureScheme) -> bytes:
+    """Return a signature envelope over the artifact read from `src`.
+
+    The scheme signs a domain-separated SHA-256 digest of the artifact (hash-then-sign),
+    so multi-GB artifacts are signed and verified with O(1) memory.
+    """
+    fingerprint = public_key_fingerprint(scheme.public_key_from_private(private_key))
+    envelope = SignatureEnvelope(
+        scheme_id=scheme.scheme_id,
+        key_fingerprint=fingerprint,
+        signature=scheme.sign(private_key, _signed_message(src)),
+    )
+    return envelope.encode()
+
+
+def verify_stream(
+    src: BinaryIO, envelope_bytes: bytes, public_key: bytes, scheme: SignatureScheme
+) -> None:
+    """Verify the artifact read from `src` against its envelope using the expected scheme.
 
     The scheme is chosen by the consumer's configuration, never by the envelope: an
-    envelope declaring a different scheme is rejected before any cryptographic work.
+    envelope declaring a different scheme is rejected before any cryptographic work,
+    and so is one produced by a key other than the configured public key.
     """
     envelope = SignatureEnvelope.decode(envelope_bytes)
     if envelope.scheme_id != scheme.scheme_id:
         raise VerificationError("signature scheme does not match the expected scheme")
     if envelope.key_fingerprint != public_key_fingerprint(public_key):
         raise VerificationError("signature was not produced by the expected public key")
-    scheme.verify(public_key, artifact, envelope.signature)
+    scheme.verify(public_key, _signed_message(src), envelope.signature)
+
+
+def _signed_message(src: BinaryIO) -> bytes:
+    digest = hashlib.sha256()
+    while chunk := src.read(_DIGEST_READ_SIZE):
+        digest.update(chunk)
+    return _SIGNED_MESSAGE_PREFIX + digest.digest()

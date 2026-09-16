@@ -1,4 +1,8 @@
-"""Layer 1: decrypt the artifact file-to-file, dispatching on the authenticated version."""
+"""Layer 1: decrypt the artifact file-to-file, dispatching on the authenticated version.
+
+Only a `VerifiedArtifact` (see `consumer.core.verify`) can be decrypted: Layer 2 runs
+first by construction.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from confidential_crypto.format import ArtifactHeader
 
 from consumer.core.errors import DecryptError
 from consumer.core.ports import KeyProvider
+from consumer.core.verify import VerifiedArtifact
 
 
 def artifact_key_size(path: Path) -> int:
@@ -26,7 +31,7 @@ def artifact_key_size(path: Path) -> int:
         raise DecryptError(f"cannot read the artifact: {exc}") from exc
 
 
-def decrypt_file(src: Path, dst: Path, provider: KeyProvider) -> ArtifactHeader:
+def decrypt_file(src: VerifiedArtifact, dst: Path, provider: KeyProvider) -> ArtifactHeader:
     """Chunked (v2) artifacts stream with O(chunk) memory; one-shot (v1) load fully.
 
     Returns the authenticated header so callers can report which mode was used.
@@ -37,7 +42,7 @@ def decrypt_file(src: Path, dst: Path, provider: KeyProvider) -> ArtifactHeader:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = dst.with_name(dst.name + ".tmp")
     try:
-        with src.open("rb") as inp:
+        with src.path.open("rb") as inp:
             head = inp.read(ArtifactHeader.max_size())
             header, _ = ArtifactHeader.decode(head)
             key = provider.get_key(registry.cipher_from_id(header.cipher_id).key_size)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import os
 
 import pytest
@@ -15,7 +17,8 @@ from confidential_crypto.errors import (
     UnsafeAlgorithmError,
     VerificationError,
 )
-from confidential_crypto.format import ArtifactHeader
+from confidential_crypto.format import ArtifactHeader, SignatureEnvelope
+from confidential_crypto.keys import public_key_fingerprint
 from confidential_crypto.signers.base import SignatureScheme
 from tests.conftest import flip_byte
 
@@ -114,3 +117,31 @@ def test_verify_rejects_scheme_mismatch(private_keys: dict[str, bytes]) -> None:
 def test_verify_rejects_malformed_envelope(signer: SignatureScheme, public_key: bytes) -> None:
     with pytest.raises(FormatError):
         artifact.verify(b"blob", b"garbage", public_key, signer)
+
+
+def test_sign_stream_matches_in_memory_sign(private_keys: dict[str, bytes]) -> None:
+    """Both entry points sign the same message, so envelopes are interchangeable."""
+    ed = registry.get_signer("ed25519")
+    blob = os.urandom(3 * (1 << 20) + 7)  # spans several digest reads
+    envelope = artifact.sign_stream(io.BytesIO(blob), private_keys[ed.name], ed)
+    assert envelope == artifact.sign(blob, private_keys[ed.name], ed)
+    public = ed.public_key_from_private(private_keys[ed.name])
+    artifact.verify_stream(io.BytesIO(blob), envelope, public, ed)
+    with pytest.raises(VerificationError):
+        artifact.verify_stream(io.BytesIO(flip_byte(blob, len(blob) - 1)), envelope, public, ed)
+
+
+def test_signature_does_not_cover_raw_digest(private_keys: dict[str, bytes]) -> None:
+    """A signature over the bare SHA-256 must not verify: the domain prefix is required."""
+    ed = registry.get_signer("ed25519")
+    blob = os.urandom(64)
+    private = private_keys[ed.name]
+    public = ed.public_key_from_private(private)
+    bare = ed.sign(private, hashlib.sha256(blob).digest())
+    envelope = SignatureEnvelope(
+        scheme_id=ed.scheme_id,
+        key_fingerprint=public_key_fingerprint(public),
+        signature=bare,
+    ).encode()
+    with pytest.raises(VerificationError):
+        artifact.verify(blob, envelope, public, ed)

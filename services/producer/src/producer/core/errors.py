@@ -32,3 +32,9 @@ class HubError(ProducerError):
     """Hugging Face Hub download or upload failed."""
 
     exit_code = 5
+
+
+class SigningError(ProducerError):
+    """Signer selection or signing failed."""
+
+    exit_code = 6

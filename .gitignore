@@ -30,8 +30,10 @@ venv/
 *.sig
 *.key
 *.pem
+*.pub
 model_cache/
 var/
+k8s/configmap-public-key.yaml
 # Notebooks and benchmark outputs
 .ipynb_checkpoints/
 benchmarks/results/

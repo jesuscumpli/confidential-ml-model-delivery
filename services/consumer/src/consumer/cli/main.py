@@ -34,6 +34,7 @@ err = Console(stderr=True, soft_wrap=True)
 log = logging.getLogger("consumer")
 
 _ARTIFACT = "Artifact"
+_SIGNATURE = "Signature (Layer 2)"
 _KEY = "Decryption key"
 _INFERENCE = "Inference"
 _OUTPUT = "Output"
@@ -65,7 +66,12 @@ RepoId = Annotated[
 ]
 ArtifactName = Annotated[
     str | None,
-    _option("--artifact-name", field="artifact_name", text="Encrypted file name.", panel=_ARTIFACT),
+    _option(
+        "--artifact-name",
+        field="artifact_name",
+        text="Encrypted file name; its signature is <stem>.sig.",
+        panel=_ARTIFACT,
+    ),
 ]
 Revision = Annotated[
     str | None,
@@ -83,6 +89,33 @@ Force = Annotated[
         field="force",
         text="Re-download the artifact even when it is already cached.",
         panel=_ARTIFACT,
+    ),
+]
+Verify = Annotated[
+    bool | None,
+    _option(
+        "--verify/--no-verify",
+        field="verify_signature",
+        text="Verify the signature before decrypting; --no-verify is for development only.",
+        panel=_SIGNATURE,
+    ),
+]
+PublicKeyPath = Annotated[
+    Path | None,
+    _option(
+        "--public-key-path",
+        field="public_key_path",
+        text="PEM public key (mounted ConfigMap).",
+        panel=_SIGNATURE,
+    ),
+]
+Signer = Annotated[
+    str | None,
+    _option(
+        "--signer",
+        field="signer",
+        text="Expected signature scheme; an envelope with another scheme is rejected.",
+        panel=_SIGNATURE,
     ),
 ]
 KeySourceOpt = Annotated[
@@ -150,6 +183,9 @@ def run(
     artifact_name: ArtifactName = None,
     revision: Revision = None,
     force: Force = None,
+    verify: Verify = None,
+    public_key_path: PublicKeyPath = None,
+    signer: Signer = None,
     key_source: KeySourceOpt = None,
     key_path: KeyPath = None,
     key_env_var: KeyEnvVar = None,
@@ -159,13 +195,16 @@ def run(
     metrics: Metrics = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Debug logging.")] = False,
 ) -> None:
-    """Download → decrypt → restore → load → predict, then print the top predictions."""
+    """Download → verify → decrypt → restore → load → predict, then print the predictions."""
     _configure_logging(verbose)
     settings = _settings(
         hub_repo_id=repo_id,
         artifact_name=artifact_name,
         artifact_revision=revision,
         force=force,
+        verify_signature=verify,
+        public_key_path=public_key_path,
+        signer=signer,
         key_source=key_source,
         key_path=key_path,
         key_env_var=key_env_var,

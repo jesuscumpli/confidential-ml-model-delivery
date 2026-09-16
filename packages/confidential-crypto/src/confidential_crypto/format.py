@@ -27,7 +27,9 @@ Signature envelope (version 1):
     magic "CMLS" | version u8 | scheme_id u8 | key_fingerprint 32B | sig_len u32 | signature
 
 `key_fingerprint` is SHA-256 of the verifying public key PEM; it lets the consumer
-detect a key mismatch before attempting verification.
+detect a key mismatch before attempting verification. The signed message is
+`"CMLS-v1-sha256\\0" || SHA-256(artifact)` (hash-then-sign with domain separation), so
+signing and verifying never need the whole artifact in memory.
 """
 
 from __future__ import annotations

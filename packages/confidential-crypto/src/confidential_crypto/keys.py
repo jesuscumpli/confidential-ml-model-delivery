@@ -36,6 +36,17 @@ def load_symmetric_key(path: Path, key_size: int) -> bytes:
     return decode_symmetric_key(data, key_size)
 
 
+def load_pem_key(path: Path) -> bytes:
+    """Read a PEM-encoded signing key (private or public); only the path is ever reported."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise InvalidKeyError(f"cannot read key file: {exc.strerror}") from exc
+    if b"-----BEGIN " not in data:
+        raise InvalidKeyError("key file is not PEM encoded")
+    return data
+
+
 def public_key_fingerprint(public_key_pem: bytes) -> bytes:
     """SHA-256 over the normalised PEM so line-ending differences do not matter."""
     normalised = b"".join(public_key_pem.split())

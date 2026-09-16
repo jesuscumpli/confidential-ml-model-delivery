@@ -1,4 +1,5 @@
-"""Shared fixtures: a fake package, its encrypted artifact, fake Hub source and key providers."""
+"""Shared fixtures: a fake package, its encrypted and signed artifact, fake Hub source,
+key providers and the trusted public key file (`CONSUMER_PUBLIC_KEY_PATH`)."""
 
 from __future__ import annotations
 
@@ -11,9 +12,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from confidential_crypto import encrypt_stream, get_cipher
+from confidential_crypto import encrypt_stream, get_cipher, get_signer, sign
 
 CIPHER = get_cipher("aes-256-gcm")
+SIGNER = get_signer("ed25519")
 PACKAGE_FILES: dict[str, bytes] = {
     "config.json": b'{"hidden_size": 8}\n',
     "vocab.txt": b"[PAD]\n[UNK]\n[CLS]\n[SEP]\n[MASK]\nhello\n",
@@ -45,11 +47,21 @@ def encrypt_bytes(plaintext: bytes, key: bytes) -> bytes:
     return out.getvalue()
 
 
+def flip_byte(data: bytes, index: int) -> bytes:
+    mutated = bytearray(data)
+    mutated[index] ^= 0x01
+    return bytes(mutated)
+
+
 class StaticKeyProvider:
+    """Serves a fixed key and counts requests: a verification failure must leave it at 0."""
+
     def __init__(self, key: bytes) -> None:
         self.key = key
+        self.requests = 0
 
     def get_key(self, key_size: int) -> bytes:
+        self.requests += 1
         return self.key
 
 
@@ -85,9 +97,35 @@ def artifact(package: bytes, key: bytes) -> bytes:
     return encrypt_bytes(package, key)
 
 
+@pytest.fixture(scope="session")
+def signing_key() -> bytes:
+    return SIGNER.generate_private_key()
+
+
+@pytest.fixture(scope="session")
+def public_key(signing_key: bytes) -> bytes:
+    return SIGNER.public_key_from_private(signing_key)
+
+
 @pytest.fixture
-def source(artifact: bytes, tmp_path: Path) -> FakeArtifactSource:
-    return FakeArtifactSource({"model.enc": artifact}, tmp_path / "cache")
+def signature(artifact: bytes, signing_key: bytes) -> bytes:
+    return sign(artifact, signing_key, SIGNER)
+
+
+@pytest.fixture
+def source(artifact: bytes, signature: bytes, tmp_path: Path) -> FakeArtifactSource:
+    return FakeArtifactSource({"model.enc": artifact, "model.sig": signature}, tmp_path / "cache")
+
+
+@pytest.fixture(autouse=True)
+def public_key_file(
+    public_key: bytes, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None
+) -> Path:
+    """Every test verifies against this key unless it overrides `CONSUMER_PUBLIC_KEY_PATH`."""
+    path = tmp_path / "signing.pub"
+    path.write_bytes(public_key)
+    monkeypatch.setenv("CONSUMER_PUBLIC_KEY_PATH", str(path))
+    return path
 
 
 @pytest.fixture

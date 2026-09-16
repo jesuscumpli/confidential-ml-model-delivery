@@ -4,10 +4,14 @@
 #   HUB_REPO_ID=<user>/<repo> scripts/demo.sh                       # happy path
 #   HUB_REPO_ID=<user>/<repo> scripts/demo.sh negative corrupt      # wrong key, exit 5
 #   HUB_REPO_ID=<user>/<repo> scripts/demo.sh negative missing      # secret absent, stuck
+#   HUB_REPO_ID=<user>/<repo> scripts/demo.sh negative tamper       # flipped byte, exit 4
 #
-# Requires: scripts/kind-setup.sh already run, the artifact already published by the
-# producer, and the decryption key at KEY_PATH (see scripts/gen-key.sh). A fresh
-# Secret and ConfigMap are created from these values on every run.
+# Requires: scripts/kind-setup.sh already run, the artifact and its signature already
+# published by the producer, the decryption key at KEY_PATH (scripts/gen-key.sh) and
+# the public signing key at PUBLIC_KEY_PATH (scripts/gen-signing-keypair.sh). Fresh
+# Secret and ConfigMaps are created from these values on every run. The tamper variant
+# also needs HF_TOKEN with write access: it publishes a one-byte-flipped copy of the
+# artifact to the `tampered` branch of HUB_REPO_ID and points the consumer at it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,16 +24,28 @@ fi
 : "${NAMESPACE:=confidential-ml}"
 : "${SECRET_NAME:=model-key}"
 : "${KEY_PATH:=${ROOT}/var/secrets/model.key}"
+: "${PUBLIC_KEY_PATH:=${ROOT}/var/secrets/signing.pub}"
 : "${ARTIFACT_NAME:=model.enc}"
+: "${TAMPERED_BRANCH:=tampered}"
 
 KUBECTL=(kubectl --context "kind-${CLUSTER_NAME}" --namespace "${NAMESPACE}")
 
 apply_config() {
+  local revision="${1:-main}"
   "${KUBECTL[@]}" create configmap consumer-config \
     --from-literal=hub_repo_id="${HUB_REPO_ID}" \
     --from-literal=artifact_name="${ARTIFACT_NAME}" \
+    --from-literal=artifact_revision="${revision}" \
     --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
+  apply_public_key
   "${KUBECTL[@]}" delete job consumer --ignore-not-found --wait=true
+}
+
+apply_public_key() {
+  echo "==> rendering and applying the public signing key ConfigMap from ${PUBLIC_KEY_PATH}"
+  PUBLIC_KEY_PATH="${PUBLIC_KEY_PATH}" NAMESPACE="${NAMESPACE}" \
+    "${ROOT}/scripts/gen-configmap-public-key.sh"
+  "${KUBECTL[@]}" apply -f "${ROOT}/k8s/configmap-public-key.yaml"
 }
 
 apply_job() {
@@ -51,7 +67,7 @@ wait_for_job() {
   fi
 }
 
-run_happy_path() {
+apply_secret() {
   if [[ ! -f "${KEY_PATH}" ]]; then
     echo "key file not found: ${KEY_PATH} (run scripts/gen-key.sh first)" >&2
     exit 1
@@ -59,6 +75,10 @@ run_happy_path() {
   echo "==> creating Secret ${SECRET_NAME} from ${KEY_PATH}"
   "${KUBECTL[@]}" create secret generic "${SECRET_NAME}" --from-file=key="${KEY_PATH}" \
     --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
+}
+
+run_happy_path() {
+  apply_secret
   apply_config
   apply_job
   echo "==> waiting for the consumer Job to complete"
@@ -66,12 +86,13 @@ run_happy_path() {
 }
 
 run_negative() {
-  local variant="${1:-corrupt}"
-  if [[ "${variant}" != missing && "${variant}" != corrupt ]]; then
-    echo "usage: scripts/demo.sh negative [missing|corrupt]" >&2
-    exit 2
-  fi
-  apply_config
+  local variant="${1:-corrupt}" revision=main
+  case "${variant}" in
+    missing|corrupt) ;;
+    tamper) revision="${TAMPERED_BRANCH}" ;;
+    *) echo "usage: scripts/demo.sh negative [missing|corrupt|tamper]" >&2; exit 2 ;;
+  esac
+  apply_config "${revision}"
   case "${variant}" in
     missing)
       "${KUBECTL[@]}" delete secret "${SECRET_NAME}" --ignore-not-found
@@ -85,6 +106,14 @@ run_negative() {
       "${KUBECTL[@]}" create secret generic "${SECRET_NAME}" --from-file=key="${wrong_key}" \
         --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
       echo "==> Secret replaced with a random key: decryption must fail (exit 5)"
+      ;;
+    tamper)
+      apply_secret
+      echo "==> publishing a one-byte-flipped ${ARTIFACT_NAME} to ${HUB_REPO_ID}@${TAMPERED_BRANCH}"
+      uv run --project "${ROOT}" python "${ROOT}/scripts/publish-tampered.py" "${HUB_REPO_ID}" \
+        --artifact-name "${ARTIFACT_NAME}" --branch "${TAMPERED_BRANCH}"
+      echo "==> consumer pinned to revision ${TAMPERED_BRANCH}: verification must fail (exit 4)"
+      echo "    with the real Secret in place, so a decryption attempt would otherwise succeed"
       ;;
   esac
   apply_job
@@ -103,5 +132,5 @@ run_negative() {
 case "${1:-run}" in
   run) run_happy_path ;;
   negative) run_negative "${2:-corrupt}" ;;
-  *) echo "usage: scripts/demo.sh [run|negative [missing|corrupt]]" >&2; exit 2 ;;
+  *) echo "usage: scripts/demo.sh [run|negative [missing|corrupt|tamper]]" >&2; exit 2 ;;
 esac

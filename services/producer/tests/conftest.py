@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import pytest
+from confidential_crypto import get_signer
 
 from producer.models.settings import ProducerSettings
 
@@ -49,7 +50,7 @@ class FakeHubClient:
         self.source_dir = source_dir
         self.revision = revision
         self.repos: dict[str, dict[str, bytes]] = {}
-        self.uploads: list[tuple[Path, str, str]] = []
+        self.uploads: list[tuple[str, dict[str, Path]]] = []
 
     def snapshot(self, model_id: str, revision: str, dest: Path) -> str:
         shutil.copytree(self.source_dir, dest, dirs_exist_ok=True)
@@ -58,9 +59,10 @@ class FakeHubClient:
     def ensure_repo(self, repo_id: str, *, private: bool) -> None:
         self.repos.setdefault(repo_id, {})
 
-    def upload(self, local_path: Path, repo_id: str, path_in_repo: str) -> str:
-        self.uploads.append((local_path, repo_id, path_in_repo))
-        self.repos[repo_id][path_in_repo] = local_path.read_bytes()
+    def upload(self, files: Mapping[str, Path], repo_id: str) -> str:
+        self.uploads.append((repo_id, dict(files)))
+        for path_in_repo, local_path in files.items():
+            self.repos[repo_id][path_in_repo] = local_path.read_bytes()
         return f"commit-{len(self.uploads)}"
 
     def list_files(self, repo_id: str) -> list[str]:
@@ -82,9 +84,27 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 @pytest.fixture
-def make_settings(tmp_path: Path) -> Any:
+def key_path(tmp_path: Path) -> Path:
+    path = tmp_path / "model.key"
+    path.write_bytes(os.urandom(32))
+    return path
+
+
+@pytest.fixture
+def signing_key_path(tmp_path: Path) -> Path:
+    path = tmp_path / "signing.key"
+    path.write_bytes(get_signer("ed25519").generate_private_key())
+    return path
+
+
+@pytest.fixture
+def make_settings(tmp_path: Path, signing_key_path: Path) -> Any:
     def factory(**overrides: Any) -> ProducerSettings:
-        defaults: dict[str, Any] = {"work_dir": tmp_path / "work", "hub_repo_id": "org/repo"}
+        defaults: dict[str, Any] = {
+            "work_dir": tmp_path / "work",
+            "hub_repo_id": "org/repo",
+            "signing_key_path": signing_key_path,
+        }
         return ProducerSettings(**{**defaults, **overrides})
 
     return factory
