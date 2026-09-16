@@ -26,6 +26,8 @@ FROM python:3.12-slim-bookworm
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+# The base image's pip is dead weight here (the venv is built by uv) and carries CVEs.
+RUN python -m pip uninstall --yes pip
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /work && chown app:app /work

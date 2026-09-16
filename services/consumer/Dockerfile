@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv  # CONSUMER_KEY_PATH is a mount path, not key material
 # Build from the repository root so the uv workspace (shared crypto package and the
 # single member lockfile) is in the build context:
 #   docker build -f services/consumer/Dockerfile -t consumer:dev .
@@ -26,6 +27,8 @@ FROM python:3.12-slim-bookworm
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
+# The base image's pip is dead weight here (the venv is built by uv) and carries CVEs.
+RUN python -m pip uninstall --yes pip
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /work && chown app:app /work
