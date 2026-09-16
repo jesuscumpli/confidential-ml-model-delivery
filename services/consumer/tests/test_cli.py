@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -100,9 +101,14 @@ def test_temporary_work_dir_is_removed(
     assert set(Path("/tmp").glob("consumer-*")) == before  # noqa: S108
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def test_help_lists_options_with_defaults(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--help"]) == 0
-    out = capsys.readouterr().out  # rich wraps at terminal width: check fragments only
+    # Typer forces colour under GITHUB_ACTIONS and styles option names in pieces, so
+    # strip ANSI codes; rich also wraps at terminal width, so check fragments only.
+    out = _ANSI.sub("", capsys.readouterr().out)
     assert "--key-source" in out
     assert "--force" in out
     assert "--no-verify" in out
