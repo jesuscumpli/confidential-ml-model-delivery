@@ -43,7 +43,7 @@ jobs:
             'find / -xdev \( -name "*.key" -o -name "*.enc" \) 2>/dev/null | grep .'
 
       - name: Trivy · image vulnerabilities (fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}
           format: sarif
