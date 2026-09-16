@@ -1,0 +1,3 @@
+# AVD-DS-0031 flags any ENV whose name contains "KEY". CONSUMER_KEY_PATH is the mount path
+# of the Kubernetes Secret file, not key material: the key never enters the image or env.
+AVD-DS-0031

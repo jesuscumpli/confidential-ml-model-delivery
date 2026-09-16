@@ -1,0 +1,7 @@
+# gitleaks configuration: default rules plus one allowlist.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vendored agent skills: reference docs contain placeholder credentials"
+paths = ['''^\.agents/skills/.*\.md$''']

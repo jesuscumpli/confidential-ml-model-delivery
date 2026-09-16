@@ -1,0 +1,76 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  image:
+    name: ${{ matrix.service }} · build + Trivy
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [producer, consumer]
+    env:
+      IMAGE: ${{ matrix.service }}:ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (workspace root as context)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+      - name: Image runs as non-root and has no key material
+        run: |
+          set -euo pipefail
+          test "$(docker run --rm --entrypoint id "$IMAGE" -u)" != "0"
+          ! docker run --rm --entrypoint sh "$IMAGE" -c \
+            'find / -xdev \( -name "*.key" -o -name "*.enc" \) 2>/dev/null | grep .'
+
+      - name: Trivy · image vulnerabilities (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload Trivy results to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  config:
+    name: Dockerfiles + k8s manifests · Trivy misconfig
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy · IaC misconfiguration scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          skip-dirs: .venv,.agents
+          trivyignores: .trivyignore
+          severity: HIGH,CRITICAL
+          exit-code: "1"

@@ -25,4 +25,13 @@ for project in "${PROJECTS[@]}"; do
     uv run --no-sync pytest -q
   )
 done
+
+echo "==> tests/integration (both services, fake Hub)"
+(
+  cd "${ROOT}"
+  uv run --no-sync ruff check tests
+  uv run --no-sync ruff format --check tests
+  uv run --no-sync mypy tests
+  uv run --no-sync pytest -q
+)
 echo "All checks passed."

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+  # The consumer pulls CPU-only torch; keep the download out of the per-step logs.
+  UV_NO_PROGRESS: "1"
+
+jobs:
+  quality:
+    name: ${{ matrix.member }} · lint + types + tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        member:
+          - packages/confidential-crypto
+          - services/producer
+          - services/consumer
+          - benchmarks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync workspace
+        run: uv sync --all-extras --all-groups --all-packages
+
+      - name: Lint (ruff)
+        working-directory: ${{ matrix.member }}
+        run: uv run --no-sync ruff check .
+
+      - name: Format check (ruff)
+        working-directory: ${{ matrix.member }}
+        run: uv run --no-sync ruff format --check .
+
+      - name: Type check (mypy --strict)
+        working-directory: ${{ matrix.member }}
+        run: uv run --no-sync mypy src tests
+
+      - name: Unit tests (pytest)
+        working-directory: ${{ matrix.member }}
+        run: uv run --no-sync pytest -q
+
+  integration:
+    name: integration · fake Hub, both services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync workspace
+        run: uv sync --all-extras --all-groups --all-packages
+
+      - name: Lint + format + types (tests/)
+        run: |
+          uv run --no-sync ruff check tests
+          uv run --no-sync ruff format --check tests
+          uv run --no-sync mypy tests
+
+      - name: Integration tests (fake Hub, synthetic BERT)
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: uv run --no-sync pytest -q

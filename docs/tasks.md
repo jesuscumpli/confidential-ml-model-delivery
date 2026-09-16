@@ -132,9 +132,10 @@ Decisions already taken (2026-09-15):
 
 ## M9 — Integration tests + CI
 
-- [ ] `tests/integration/`: full encrypt → sign → publish (fake Hub) → download → verify → decrypt → load with `bert-tiny`.
-- [ ] Optional real-Hub test gated by `HF_TOKEN` env var.
-- [ ] GitHub Actions: lint, type-check, unit tests for the three projects; integration test with fake Hub; kind smoke test (optional, manual trigger).
+- [x] `tests/integration/`: full encrypt → sign → publish (fake Hub) → download → verify → decrypt → load → inference, through the pipelines and through both CLIs, in chunked and one-shot mode. Default run uses a synthetic 2-layer BERT built offline; the real `bert-tiny` variant is `slow`. Negative paths: tampered artifact/signature, foreign signature, untrusted public key, wrong decryption key, unsigned publish; each asserts the exit code and that the key is never read when Layer 2 fails. Run with `uv run pytest` at the root (added to `scripts/check.sh`).
+- [x] Optional real-Hub test gated by `HF_TOKEN` + `INTEGRATION_HUB_REPO_ID` (`uv run pytest -m slow`).
+- [x] GitHub Actions: `ci.yml` (ruff, mypy, pytest per workspace member + integration suite), `docker.yml` (build both images, non-root/no-key-file check, Trivy image scan gating HIGH/CRITICAL, Trivy misconfig scan of Dockerfiles and k8s manifests), `security.yml` (`uv audit` weekly + on push, gitleaks over full history, Semgrep `p/python`/`p/security-audit`/`p/secrets`). Bandit is not added: ruff already enforces its rule set (`S`). Suppressions are documented in `.gitleaks.toml`, `.semgrepignore`, `.trivyignore` and one `# nosemgrep` in `aes_cbc_hmac.py`.
+- [x] `kind-smoke.yml` (manual `workflow_dispatch`, needs the `HF_TOKEN` repository secret and a scratch `hub_repo_id` input): per-run keys → `producer run --public` → `helm/kind-action` + `scripts/kind-setup.sh` → `scripts/demo.sh run` (asserts `complete` + inference) → `negative corrupt` (asserts exit 5) → `negative tamper` (asserts exit 4 and no decryption log line). Keys are deleted at the end and never uploaded.
 - Acceptance: CI green on `main`.
 
 ## M10 — Documentation

@@ -1,0 +1,5 @@
+# Replaces Semgrep's default ignore list on purpose: tests are scanned too.
+.git/
+.venv/
+.agents/
+benchmarks/notebooks/

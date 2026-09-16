@@ -1,0 +1,120 @@
+name: kind smoke test
+
+# Manual only: publishes a real artifact to a scratch Hub repository, then runs the
+# consumer Job in a kind cluster with the same scripts a developer uses locally
+# (scripts/kind-setup.sh + scripts/demo.sh). Needs the HF_TOKEN repository secret
+# (write access to the scratch repo). Keys are generated per run and never uploaded.
+
+on:
+  workflow_dispatch:
+    inputs:
+      hub_repo_id:
+        description: Scratch Hub repository (<user>/<repo>); its contents are overwritten
+        required: true
+        type: string
+      model_id:
+        description: Model to package
+        required: false
+        default: prajjwal1/bert-tiny
+        type: string
+      negative:
+        description: Also run the negative scenarios (wrong key → exit 5, tampered → exit 4)
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  HUB_REPO_ID: ${{ inputs.hub_repo_id }}
+  CLUSTER_NAME: confidential-ml
+  NAMESPACE: confidential-ml
+  UV_FROZEN: "1"
+  UV_NO_SYNC: "1"   # scripts call `uv run`; the environment is synced once below
+
+jobs:
+  smoke:
+    name: publish → kind Job → verify → decrypt → infer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require HF_TOKEN
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [[ -z "${HF_TOKEN}" ]]; then
+            echo "::error::the HF_TOKEN repository secret is not set" >&2
+            exit 1
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync producer environment (the consumer runs only inside the cluster)
+        run: uv sync --package producer
+
+      - name: Generate per-run keys (never leave the runner)
+        run: |
+          scripts/gen-key.sh
+          scripts/gen-signing-keypair.sh
+
+      - name: Producer · package, encrypt, sign, publish
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Public scratch repo: the in-cluster consumer has no Hub token, and the repo
+          # holds nothing but ciphertext and a signature.
+          uv run producer run \
+            --model-id "${{ inputs.model_id }}" \
+            --repo-id "${HUB_REPO_ID}" \
+            --public \
+            --key-path var/secrets/model.key \
+            --signing-key-path var/secrets/signing.key \
+            --work-dir var/artifacts
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          wait: 120s
+
+      - name: Build images and load the consumer into the cluster
+        run: scripts/kind-setup.sh
+
+      - name: Happy path · consumer Job completes with an inference
+        run: |
+          scripts/demo.sh run | tee happy.log
+          grep -q "job status: complete" happy.log
+          grep -q "prompt:" happy.log
+
+      - name: Negative · wrong key (Layer 1, exit 5)
+        if: ${{ inputs.negative }}
+        run: |
+          scripts/demo.sh negative corrupt | tee corrupt.log
+          grep -q "consumer exit code 5" corrupt.log
+
+      - name: Negative · tampered artifact (Layer 2, exit 4, key never used)
+        if: ${{ inputs.negative }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          scripts/demo.sh negative tamper | tee tamper.log
+          grep -q "consumer exit code 4" tamper.log
+          ! grep -q "decrypted artifact" tamper.log
+
+      - name: Cluster state (diagnostics)
+        if: always()
+        run: |
+          kubectl --context "kind-${CLUSTER_NAME}" --namespace "${NAMESPACE}" get all,configmaps,secrets -o wide || true
+          kubectl --context "kind-${CLUSTER_NAME}" --namespace "${NAMESPACE}" describe job consumer || true
+          kubectl --context "kind-${CLUSTER_NAME}" --namespace "${NAMESPACE}" logs -l app=consumer --tail=200 || true
+
+      - name: Remove key material
+        if: always()
+        run: rm -rf var/secrets

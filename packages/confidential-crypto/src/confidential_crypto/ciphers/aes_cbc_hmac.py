@@ -52,7 +52,8 @@ class AesCbcHmacSha256:
         enc_key, mac_key = self._subkeys(key)
         padder = padding.PKCS7(128).padder()
         padded = padder.update(bytes(plaintext)) + padder.finalize()
-        encryptor = Cipher(algorithms.AES(enc_key), modes.CBC(nonce)).encryptor()
+        # Encrypt-then-MAC below (HMAC-SHA256, constant-time compare); evaluation baseline only
+        encryptor = Cipher(algorithms.AES(enc_key), modes.CBC(nonce)).encryptor()  # nosemgrep
         ciphertext = encryptor.update(padded) + encryptor.finalize()
         return ciphertext + self._mac(mac_key, nonce, aad, ciphertext)
 
@@ -66,7 +67,7 @@ class AesCbcHmacSha256:
         body, tag = data[: -self.tag_size], data[-self.tag_size :]
         if not hmac.compare_digest(tag, self._mac(mac_key, nonce, aad, body)):
             raise DecryptionError(f"{self.name}: authentication failed")
-        decryptor = Cipher(algorithms.AES(enc_key), modes.CBC(nonce)).decryptor()
+        decryptor = Cipher(algorithms.AES(enc_key), modes.CBC(nonce)).decryptor()  # nosemgrep
         padded = decryptor.update(body) + decryptor.finalize()
         unpadder = padding.PKCS7(128).unpadder()
         try:

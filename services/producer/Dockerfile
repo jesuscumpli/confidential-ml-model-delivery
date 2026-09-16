@@ -22,6 +22,11 @@ RUN uv sync --frozen --no-dev --package producer
 
 FROM python:3.12-slim-bookworm
 
+# Debian security updates the base tag may not carry yet (Trivy gates HIGH/CRITICAL in CI).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
     && mkdir -p /work && chown app:app /work
 COPY --from=builder --chown=app:app /app /app
