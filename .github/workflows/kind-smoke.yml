@@ -37,6 +37,7 @@ jobs:
   smoke:
     name: publish → kind Job → verify → decrypt → infer
     runs-on: ubuntu-latest
+    environment: HF_TOKEN
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
