@@ -27,6 +27,13 @@ scripts/                       # helper scripts (check.sh runs all quality gates
 docs/                          # plan, tasks, decision records, architecture, security, layers docs
 ```
 
+Inside each service the code is layered (`cli/ → app/ → core/ | infra/ → models/`,
+with `infra/ → core/` for errors and ports): `cli` parses arguments and maps errors to
+exit codes, `app` orchestrates the pipeline, `core` holds domain logic plus errors and
+`Protocol` ports, `models` holds pydantic settings/manifest and plain data types, and
+`infra` holds third-party adapters (Hub, key sources, Transformers). New code goes in
+the layer that matches its dependencies; never import upwards.
+
 Producer and consumer are separate projects on purpose: independent dependency
 graphs, Docker images, and trust boundaries. Do not introduce a shared Python
 package unless duplication becomes substantial and clearly justified.
@@ -82,23 +89,26 @@ Spanish summary is `docs/crypto-decision.md`.
 
 ## Working with uv
 
-Each project (`packages/confidential-crypto`, `services/*`, `benchmarks`) is its
-own uv project. Run commands from the project directory:
+The root `pyproject.toml` is a **uv workspace** whose members are
+`packages/confidential-crypto`, `services/producer`, `services/consumer` and
+`benchmarks`. A single root `uv.lock` covers the whole workspace; do not add
+per-member lockfiles.
+
+Install everything into the shared root environment once:
 
 ```bash
-cd services/producer
-uv sync            # install deps + dev deps
-uv run pytest      # run tests
-uv run ruff check  # lint
-uv run ruff format --check
-uv run mypy src
+uv sync --all-extras --all-groups --all-packages
 ```
 
-`scripts/check.sh` runs all of the above in every project; it must pass before
-a milestone is considered done.
+Then run commands from the repository root (`uv run producer ...`,
+`uv run consumer ...`, `uv run bench ...`) or from a member directory
+(`cd services/producer && uv run pytest`). `scripts/check.sh` runs lint, format
+check, type check and tests in every member; it must pass before a milestone is
+considered done.
 
-Docker images are built from the repository root so the shared package is in
-the build context:
+Docker images are built from the repository root so the workspace (shared crypto
+package and the single lockfile) is in the build context. Each image installs
+only its own member's dependency group (`uv sync --package <name>`):
 
 ```bash
 docker build -f services/producer/Dockerfile -t producer:dev .

@@ -1,27 +1,14 @@
-"""Hugging Face Hub access behind a small protocol so tests can substitute a fake."""
+"""Hugging Face Hub adapter implementing `producer.core.ports.HubClient`."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
 
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.errors import HfHubHTTPError
 
-from producer.errors import HubError
-from producer.packaging import MODEL_FILE_PATTERNS
-
-
-class HubClient(Protocol):
-    def snapshot(self, model_id: str, revision: str, dest: Path) -> str:
-        """Download the allow-listed model files into `dest`; return the resolved commit."""
-
-    def ensure_repo(self, repo_id: str, *, private: bool) -> None: ...
-
-    def upload(self, local_path: Path, repo_id: str, path_in_repo: str) -> str:
-        """Upload one file; return the resulting commit identifier."""
-
-    def list_files(self, repo_id: str) -> list[str]: ...
+from producer.core.errors import HubError
+from producer.core.packaging import MODEL_FILE_PATTERNS
 
 
 class HfHubClient:

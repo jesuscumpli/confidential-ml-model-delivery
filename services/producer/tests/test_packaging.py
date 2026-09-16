@@ -10,9 +10,9 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from producer.errors import PackagingError
-from producer.manifest import MANIFEST_NAME, Manifest, sha256_file
-from producer.packaging import collect_files, package_model
+from producer.core.errors import PackagingError
+from producer.core.packaging import collect_files, package_model, sha256_file
+from producer.models.manifest import MANIFEST_NAME, Manifest
 from tests.conftest import MODEL_FILES, write_model_dir
 
 

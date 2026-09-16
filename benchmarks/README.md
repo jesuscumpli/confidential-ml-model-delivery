@@ -13,7 +13,7 @@ uv run jupyter lab notebooks
 
 # Headless: measure, then render the ADR
 uv run bench run --sizes 1 16 64 --repeats 5          # writes results/*.csv
-uv run bench run --artifact ../artifacts/model.tar     # add the real artifact size
+uv run bench run --artifact ../var/artifacts/model.tar     # add the real artifact size
 uv run bench export                                    # writes ../docs/crypto-evaluation.md
 
 # Quality gates

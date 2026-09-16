@@ -11,10 +11,10 @@ import pytest
 from confidential_crypto import decrypt
 from confidential_crypto.format import ARTIFACT_VERSION_CHUNKED, ArtifactHeader
 
-from producer import pipeline
-from producer.cli import main
-from producer.errors import ConfigError, HubError
-from producer.manifest import MANIFEST_NAME
+from producer.app import pipeline
+from producer.cli.main import main
+from producer.core.errors import ConfigError, HubError
+from producer.models.manifest import MANIFEST_NAME
 from tests.conftest import MODEL_FILES, FakeHubClient
 
 
@@ -29,31 +29,53 @@ def _cli(fake_hub: FakeHubClient, *argv: str) -> int:
     return main(list(argv), client_factory=lambda _: fake_hub)
 
 
-@pytest.mark.parametrize("command", ["gen-key", "package", "encrypt", "publish", "run"])
+@pytest.mark.parametrize("command", ["gen-key", "package", "encrypt", "publish", "run", "config"])
 def test_help_for_every_subcommand(command: str, capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as info:
-        main([command, "--help"])
-    assert info.value.code == 0
+    assert main([command, "--help"]) == 0
     assert command in capsys.readouterr().out
 
 
-def test_unknown_command_is_usage_error() -> None:
-    with pytest.raises(SystemExit) as info:
-        main(["frobnicate"])
-    assert info.value.code == 2
+def test_help_shows_defaults_and_env_vars(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["encrypt", "--help"]) == 0
+    out = capsys.readouterr().out
+    assert "default: chunked" in out
+    assert "PRODUCER_ENCRYPTION_MODE" in out
+
+
+def test_unknown_command_is_usage_error(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["frobnicate"]) == 2
+    assert "No such command" in capsys.readouterr().err
 
 
 def test_unknown_cipher_is_rejected_by_parser(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as info:
-        main(["gen-key", "--out", "k", "--cipher", "rot13"])
-    assert info.value.code == 2
-    assert "invalid choice" in capsys.readouterr().err
+    assert main(["gen-key", "--out", "k", "--cipher", "rot13"]) == 2
+    assert "is not one of" in capsys.readouterr().err
+
+
+def test_unknown_mode_is_rejected_by_parser(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["encrypt", "--mode", "streaming"]) == 2
+    assert "Invalid value" in capsys.readouterr().err
 
 
 def test_evaluation_only_cipher_is_not_offered(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        main(["gen-key", "--help"])
+    assert main(["gen-key", "--help"]) == 0
     assert "aes-256-cbc-hmac-sha256" not in capsys.readouterr().out
+
+
+def test_out_of_range_chunk_size_is_config_error(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["encrypt", "--chunk-size", "1"]) == ConfigError.exit_code
+    assert "chunk_size" in capsys.readouterr().err
+
+
+def test_config_masks_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "hf_secret_token_value")
+    assert main(["config", "--repo-id", "org/repo", "--mode", "one-shot"]) == 0
+    out = capsys.readouterr().out
+    assert "hf_secret_token_value" not in out
+    assert "one-shot" in out
+    assert "org/repo (private)" in out
 
 
 def test_encrypt_without_key_path_fails(
@@ -147,3 +169,25 @@ def test_publish_reports_hub_error_exit_code(
     )  # fmt: skip
     assert code == HubError.exit_code
     assert fake_hub.uploads == []
+
+
+def test_interactive_run_accepts_defaults(
+    fake_hub: FakeHubClient,
+    tmp_path: Path,
+    key_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pressing Enter on every prompt keeps the flags given on the command line."""
+    monkeypatch.setattr("typer.prompt", lambda *_, default=None, **__: default)
+    monkeypatch.setattr("typer.confirm", lambda *_, default=None, **__: default)
+    code = _cli(
+        fake_hub,
+        "run", "--interactive",
+        "--work-dir", str(tmp_path / "work"),
+        "--key-path", str(key_path),
+        "--repo-id", "org/repo",
+        "--mode", "one-shot",
+    )  # fmt: skip
+    assert code == 0
+    blob = fake_hub.repos["org/repo"]["model.enc"]
+    assert ArtifactHeader.decode(blob)[0].version == 1

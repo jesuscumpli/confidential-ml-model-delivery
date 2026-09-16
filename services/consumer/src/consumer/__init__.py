@@ -1,7 +1,7 @@
-"""Model artifact consumer: retrieve, verify and decrypt Hugging Face models.
+"""Model artifact consumer: retrieve, verify, decrypt, restore and run one inference.
 
-Layer 1 decryption and Layer 2 signature verification are implemented in
-this package. The consumer runs in Kubernetes and stores no secrets.
+The consumer runs as a Kubernetes Job. The Layer 1 key reaches it only through a
+`KeyProvider` (a mounted Secret file by default); it never lives in settings or logs.
 """
 
 __version__ = "0.1.0"

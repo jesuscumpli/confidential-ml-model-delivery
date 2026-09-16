@@ -12,7 +12,7 @@ from confidential_crypto.ciphers.base import AeadCipher
 from confidential_crypto.errors import InvalidKeyError
 from confidential_crypto.keys import generate_symmetric_key, load_symmetric_key
 
-from producer.errors import ConfigError
+from producer.core.errors import ConfigError
 
 _KEY_FILE_MODE = 0o600
 

@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from producer.encrypt import EncryptionMode
-from producer.settings import ProducerSettings
+from producer.models.encryption import EncryptionMode
+from producer.models.settings import ProducerSettings
 
 TOKEN = "hf_not_a_real_token_value"  # noqa: S105 - test fixture, not a credential
 
@@ -20,7 +20,7 @@ def test_defaults_are_chunked_aes_gcm() -> None:
     assert settings.encryption_mode is EncryptionMode.CHUNKED
     assert settings.artifact_name == "model.enc"
     assert settings.hf_token is None
-    assert settings.artifact_path == Path("artifacts/upload/model.enc")
+    assert settings.artifact_path == Path("var/artifacts/upload/model.enc")
 
 
 def test_environment_is_read(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,13 +7,14 @@ uid/gid 0, empty owner names, fixed mode, relative POSIX names only.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import io
 import os
 import tarfile
 from pathlib import Path, PurePosixPath
 
-from producer.errors import PackagingError
-from producer.manifest import MANIFEST_NAME, FileEntry, Manifest, sha256_file
+from producer.core.errors import PackagingError
+from producer.models.manifest import MANIFEST_NAME, FileEntry, Manifest
 
 MODEL_FILE_PATTERNS: tuple[str, ...] = (
     "config.json",
@@ -31,6 +32,7 @@ _SAFETENSORS_SUFFIX = ".safetensors"
 # huggingface_hub keeps download metadata under local_dir/.cache; it is not model data
 _EXCLUDED_DIRS = frozenset({".cache"})
 _FILE_MODE = 0o644
+_HASH_BLOCK = 1 << 20
 
 
 def collect_files(model_dir: Path) -> list[PurePosixPath]:
@@ -86,6 +88,14 @@ def package_model(model_dir: Path, model_id: str, revision: str, out_path: Path)
     manifest = build_manifest(model_dir, files, model_id, revision)
     write_package(model_dir, manifest, out_path)
     return manifest
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(_HASH_BLOCK), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _allowed(relative: PurePosixPath) -> bool:

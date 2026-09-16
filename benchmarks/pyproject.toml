@@ -34,7 +34,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-confidential-crypto = { path = "../packages/confidential-crypto", editable = true }
+confidential-crypto = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]

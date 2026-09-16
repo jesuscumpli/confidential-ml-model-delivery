@@ -1,7 +1,7 @@
 """Typed producer configuration from environment variables (`PRODUCER_*`, `HF_TOKEN`).
 
 The decryption key is never a setting: only its path is, and the bytes are read by
-`producer.keys` at the moment they are needed.
+`producer.infra.keys` at the moment they are needed.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from confidential_crypto.format import MAX_CHUNK_SIZE, MIN_CHUNK_SIZE
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from producer.encrypt import EncryptionMode
+from producer.models.encryption import EncryptionMode
 
 DEFAULT_MODEL_ID = "prajjwal1/bert-tiny"
 DEFAULT_ARTIFACT_NAME = "model.enc"
@@ -27,14 +27,14 @@ class ProducerSettings(BaseSettings):
 
     model_id: str = DEFAULT_MODEL_ID
     model_revision: str = "main"
-    hub_repo_id: str | None = None
+    hub_repo_id: str | None = "jesuscumpli/confidential-ml-model"
     hf_token: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("HF_TOKEN", "PRODUCER_HF_TOKEN")
     )
     private_repo: bool = True
     artifact_name: str = Field(default=DEFAULT_ARTIFACT_NAME, pattern=r"^[A-Za-z0-9._-]+$")
     key_path: Path | None = None
-    work_dir: Path = Path("artifacts")
+    work_dir: Path = Path("var/artifacts")
     cipher: str = DEFAULT_CIPHER
     encryption_mode: EncryptionMode = EncryptionMode.CHUNKED
     chunk_size: int = Field(default=DEFAULT_CHUNK_SIZE, ge=MIN_CHUNK_SIZE, le=MAX_CHUNK_SIZE)

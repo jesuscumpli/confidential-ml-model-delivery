@@ -34,11 +34,12 @@ Decisions already taken (2026-09-15):
 - [x] Commit `docs/plan.md`; add a short "Evaluation phase" section and the shared-package justification to it.
 - [x] Create `packages/confidential-crypto` uv project (same ruff/mypy/pytest config as the services).
 - [x] Create `benchmarks/` uv project (jupyter, pandas, matplotlib, `confidential-crypto[bench]`).
-- [x] Wire path dependencies: producer and consumer depend on `confidential-crypto`.
+- [x] Wire workspace dependencies: producer, consumer and benchmarks depend on `confidential-crypto` as a workspace member.
+- [x] Root `pyproject.toml` as a uv workspace (`packages/*`, `services/*`, `benchmarks`) with a single root `uv.lock` and shared dev tools; no per-member lockfiles.
 - [x] Add notebook checkpoints and benchmark results to `.gitignore`; `nbstripout` in the benchmarks dev group.
-- [x] `scripts/check.sh`: runs `ruff check`, `ruff format --check`, `mypy`, `pytest` across all uv projects.
-- [x] Dockerfiles rebuilt with repository-root build context (shared package in context), non-root user.
-- Acceptance: `uv sync` and `scripts/check.sh` pass in all three projects.
+- [x] `scripts/check.sh`: runs `ruff check`, `ruff format --check`, `mypy`, `pytest` across all workspace members.
+- [x] Dockerfiles rebuilt with repository-root build context (workspace in context), each installing only its member's group (`uv sync --package`), non-root user.
+- Acceptance: `uv sync --all-extras --all-groups --all-packages` and `scripts/check.sh` pass for the workspace.
 
 ## M1 — Artifact format + AES-256-GCM (baseline)
 
@@ -88,7 +89,7 @@ Decisions already taken (2026-09-15):
 
 - [x] `producer` CLI (`argparse` or `typer`): `package`, `encrypt`, `publish`, `run` (all steps). Config via env: model id, revision, HF repo id, HF token, artifact name, key path/output, cipher name, encryption mode (**chunked default**, one-shot available per artifact).
 - [x] Typed configuration object with `pydantic-settings` (env > defaults): the CLI reads into it; sensitive fields (e.g. HF token) are `SecretStr`; the decryption key is loaded from a user-given path — never an env var — and the settings object is never dumped/printed wholesale.
-- [x] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` and `scripts/create-k8s-secret.sh`.
+- [x] Key output: writes raw key to a path given by the user (never stdout by default), plus `scripts/gen-key.sh` (and the Secret is created from the key by `scripts/demo.sh`).
 - [x] Hub client wrapper with an interface so integration tests can use a fake.
 - [x] Dockerfile hardened: non-root, no cache, `uv sync --frozen --no-dev`.
 - [x] Tests: CLI argument validation, publish uses fake client, plaintext never written to the upload dir.
@@ -97,27 +98,31 @@ Decisions already taken (2026-09-15):
 
 ## M6 — Consumer locally
 
-- [ ] `KeyProvider` abstraction: `FileKeyProvider` (mounted Secret), `EnvKeyProvider`; `CdhKeyProvider` stub documented for Layer 3.
-- [ ] Typed settings via `pydantic-settings` (env): model/repo/artifact names, secret mount path, public key path; sensitive fields as `SecretStr`; settings never dumped to logs and never contain key bytes (key stays inside `KeyProvider`).
-- [ ] Flow: download → (verify, M8) → decrypt (dispatch on version byte; **chunked v2 default**, one-shot v1 still supported) → safe tar extraction to temp dir (path traversal guard) → load with `AutoModelForMaskedLM` + tokenizer → fill-mask inference → print result.
-- [ ] Every failure maps to a distinct non-zero exit code; no secrets or key material in logs.
-- [ ] Tests: decrypt failures, unsafe tar members, model load with `bert-tiny` fixture (marked slow), exit codes, settings serialization (`model_dump`/`model_dump_json`) never contains key bytes or `SecretStr` values.
-- [ ] Dockerfile (non-root, CPU-only torch to keep the image small).
+- [x] `KeyProvider` abstraction: `FileKeyProvider` (mounted Secret), `EnvKeyProvider`; `CdhKeyProvider` stub documented for Layer 3.
+- [x] Typed settings via `pydantic-settings` (env): model/repo/artifact names, secret mount path, public key path; sensitive fields as `SecretStr`; settings never dumped to logs and never contain key bytes (key stays inside `KeyProvider`).
+- [x] Flow: download → (verify, M8) → decrypt (dispatch on version byte; **chunked v2 default**, one-shot v1 still supported) → safe tar extraction to temp dir (path traversal guard) → load with `AutoModelForMaskedLM` + tokenizer → fill-mask inference → print result.
+- [x] Every failure maps to a distinct non-zero exit code; no secrets or key material in logs.
+- [x] Tests: decrypt failures, unsafe tar members, model load with `bert-tiny` fixture (marked slow), exit codes, settings serialization (`model_dump`/`model_dump_json`) never contains key bytes or `SecretStr` values.
+- [x] Dockerfile (non-root, CPU-only torch to keep the image small).
 - Acceptance: `uv run consumer` locally completes inference on the published artifact.
+  Verified 2026-09-15 (`france` top-1 from `jesuscumpli/confidential-ml-model`). Loader uses
+  `Auto*` when `config.json` has `model_type`, explicit `Bert*` otherwise (bert-tiny).
 
 ## M7 — Layer 1 in Kubernetes (kind)
 
-- [ ] `scripts/kind-up.sh` / `kind-down.sh`, `scripts/build-images.sh`, `scripts/kind-load.sh`.
-- [ ] `k8s/namespace.yaml`, `k8s/secret.example.yaml` (placeholder only), `k8s/consumer-job.yaml` (Secret mounted as file, read-only FS, non-root, no service account token).
-- [ ] `scripts/demo-layer1.sh`: create Secret from key file, apply Job, wait, print logs; `scripts/demo-layer1-negative.sh`: delete/corrupt Secret ⇒ Job fails.
+- [x] `scripts/kind-setup.sh` (cluster + build + load images), `scripts/kind-down.sh`.
+- [x] `k8s/namespace.yaml`, `k8s/consumer-job.yaml` (Secret mounted as file, read-only FS, non-root, no service account token; Secret/ConfigMap generated at run time by `scripts/demo.sh`).
+- [x] `scripts/demo.sh` (run): creates the Secret and ConfigMap from `HUB_REPO_ID`/`KEY_PATH`, applies the Job, waits, prints logs; `scripts/demo.sh negative [missing|corrupt]`: broken Secret ⇒ Job fails.
 - Acceptance: fresh kind cluster completes inference; missing Secret gives a clear failure.
+  Verified 2026-09-15: Job completes under the `restricted` Pod Security profile; corrupt
+  Secret ⇒ `authentication failed`, exit 5; missing Secret ⇒ pod stuck on `FailedMount`.
 
 ## M8 — Layer 2 signing and verification
 
 - [ ] Producer: `sign` step using the selected signer; `model.sig` published next to `model.enc`; `scripts/gen-signing-keypair.sh`.
 - [ ] Consumer: verification before any decryption (enforced by code structure and a test asserting decrypt is not called on failure); public key from mounted ConfigMap.
 - [ ] `k8s/configmap-public-key.yaml` generated by script (public key is not a secret but is not committed either, to keep the demo reproducible).
-- [ ] `scripts/demo-layer2-tamper.sh`: flip one byte of `model.enc` (local copy or separate HF repo/revision), run consumer ⇒ verification fails, no decryption attempted.
+- [ ] `scripts/demo.sh negative tamper`: flip one byte of `model.enc` (local copy or separate HF repo/revision), run consumer ⇒ verification fails, no decryption attempted.
 - [ ] Tests: valid verifies; modified artifact, modified signature, wrong key all fail; scheme id mismatch fails.
 - Acceptance: tamper demo reproducible from the README.
 

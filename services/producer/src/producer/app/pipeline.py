@@ -13,13 +13,13 @@ from confidential_crypto.ciphers.base import AeadCipher
 from confidential_crypto.errors import CryptoError, FormatError
 from confidential_crypto.format import ArtifactHeader
 
-from producer.encrypt import encrypt_file
-from producer.errors import ConfigError, HubError
-from producer.hub import HubClient
-from producer.keys import read_key
-from producer.manifest import Manifest
-from producer.packaging import package_model
-from producer.settings import ProducerSettings
+from producer.core.encryption import encrypt_file
+from producer.core.errors import ConfigError, HubError
+from producer.core.packaging import package_model
+from producer.core.ports import HubClient
+from producer.infra.keys import read_key
+from producer.models.manifest import Manifest
+from producer.models.settings import ProducerSettings
 
 log = logging.getLogger(__name__)
 

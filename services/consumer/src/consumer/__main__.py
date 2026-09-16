@@ -1,11 +1,8 @@
-"""Bootstrap entry point, replaced by the real consumer flow at Milestone 4."""
+"""`python -m consumer` entry point."""
 
-from consumer import __version__
+import sys
 
-
-def main() -> None:
-    print(f"consumer {__version__} — flow not implemented yet")
-
+from consumer.cli.main import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -3,21 +3,14 @@
 from __future__ import annotations
 
 import os
-from enum import StrEnum
 from pathlib import Path
 
 from confidential_crypto import artifact
 from confidential_crypto.ciphers.base import AeadCipher
 from confidential_crypto.errors import CryptoError
 
-from producer.errors import EncryptionError
-
-
-class EncryptionMode(StrEnum):
-    """Chunked (format v2) is the production default; one-shot (v1) suits small models."""
-
-    CHUNKED = "chunked"
-    ONE_SHOT = "one-shot"
+from producer.core.errors import EncryptionError
+from producer.models.encryption import EncryptionMode
 
 
 def encrypt_file(

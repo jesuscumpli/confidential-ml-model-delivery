@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: consumer
+  namespace: confidential-ml
+spec:
+  backoffLimit: 0            # one attempt: a failure must surface, not be retried away
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: consumer
+          image: consumer:dev
+          imagePullPolicy: IfNotPresent   # loaded into kind by scripts/kind-setup.sh
+          env:
+            - name: CONSUMER_HUB_REPO_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: consumer-config
+                  key: hub_repo_id
+            - name: CONSUMER_ARTIFACT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: consumer-config
+                  key: artifact_name
+            - name: CONSUMER_KEY_PATH
+              value: /etc/model-key/key
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: model-key
+              mountPath: /etc/model-key
+              readOnly: true
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: model-key
+          secret:
+            secretName: model-key
+            defaultMode: 0400
+            items:
+              - key: key
+                path: key
+        - name: work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

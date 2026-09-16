@@ -42,40 +42,56 @@ Layer 3 is optional and should not compromise the clarity or reliability of Laye
 
 ```text
 confidential-ml-model-delivery/
+├── pyproject.toml                    # uv workspace root (members below)
+├── uv.lock                           # single lockfile for the whole workspace
 ├── packages/confidential-crypto/     # shared crypto package (format, registry, ciphers, signers)
 │   ├── src/confidential_crypto/
 │   ├── tests/
-│   ├── pyproject.toml
-│   └── uv.lock
+│   └── pyproject.toml
 ├── services/producer/
-│   ├── src/producer/
+│   ├── src/producer/                 # layered: cli/ app/ core/ models/ infra/ (see below)
 │   ├── tests/
 │   ├── Dockerfile
-│   ├── pyproject.toml
-│   └── uv.lock
+│   └── pyproject.toml
 ├── services/consumer/
-│   ├── src/consumer/
+│   ├── src/consumer/                 # same layers as the producer
 │   ├── tests/
 │   ├── Dockerfile
-│   ├── pyproject.toml
-│   └── uv.lock
+│   └── pyproject.toml
 ├── benchmarks/                       # crypto evaluation: runners + Jupyter notebook
 │   ├── src/bench/
 │   ├── notebooks/
-│   ├── pyproject.toml
-│   └── uv.lock
+│   └── pyproject.toml
 ├── k8s/
 ├── docs/
 ├── scripts/
 ├── tests/integration/
+├── var/                              # generated, git-ignored: artifacts/ (work dir) and secrets/ (key)
 ├── README.md
 ├── AGENTS.md
 └── CLAUDE.md -> AGENTS.md
 ```
 
+### Service layers
+
+Both services share the same internal layout. Dependencies point downwards only:
+`cli → app → core / infra → models`, and `infra → core` for errors and ports.
+
+```text
+src/<service>/
+├── cli/      # entry point: argparse, exit codes, user-facing output
+├── app/      # use cases: pipeline orchestration, logging of steps
+├── core/     # domain logic (packaging, encryption/decryption, safe extraction),
+│             # errors and ports (Protocols implemented by infra)
+├── models/   # data: pydantic settings, pydantic Manifest, enums, result types
+└── infra/    # third-party adapters: Hugging Face Hub, key files/env/CDH,
+              # Transformers/PyTorch (consumer only)
+```
+
 ### Application boundaries
 
-Producer and consumer are separate Python projects.
+Producer and consumer are separate Python projects (separate workspace members
+with their own pyproject, source, tests and Docker image).
 
 Reasons:
 - independent dependency graphs;
@@ -84,12 +100,17 @@ Reasons:
 - clear trust and responsibility boundaries;
 - easier future evolution toward separate jobs/services.
 
+A single root `pyproject.toml` defines the uv workspace that ties the members
+together for local development (one environment, one lockfile), without merging
+their dependency graphs at runtime: each Docker image installs only its own
+member's group.
+
 Do not introduce a shared Python package unless duplication becomes substantial and has a clear justification.
 
 The one justified exception is `packages/confidential-crypto`:
 - the encrypted artifact format and the algorithm registry **must** be byte-for-byte identical on both sides; two copies would be a divergence risk, not a boundary;
 - it contains no Hub, Kubernetes, or model-loading logic, so trust boundaries are unchanged;
-- each service consumes it as a uv path dependency; extra algorithms used only in the evaluation live behind a `[bench]` optional extra, so producer and consumer images ship only `cryptography`.
+- each service consumes it as a uv workspace dependency; extra algorithms used only in the evaluation live behind a `[bench]` optional extra, so producer and consumer images ship only `cryptography`.
 
 ### Crypto module design (modular, factory-based)
 
@@ -273,7 +294,7 @@ Acceptance:
 ## Milestone 4 — Layer 1 Kubernetes consumer
 
 Deploy a consumer workload using a Kubernetes Secret on a local `kind` cluster
-(`scripts/kind-up.sh`, `scripts/build-images.sh`, `scripts/kind-load.sh`).
+(`scripts/kind-setup.sh`, `scripts/demo.sh`, `scripts/kind-down.sh`).
 
 The consumer runs as a `Job` (one inference, then exit) so failures surface as a
 non-zero exit code. Key retrieval goes through a `KeyProvider` abstraction

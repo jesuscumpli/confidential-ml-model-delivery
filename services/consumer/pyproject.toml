@@ -11,8 +11,14 @@ dependencies = [
     "confidential-crypto",
     "cryptography>=44.0.0",
     "huggingface_hub>=0.30.0",
+    "pydantic-settings>=2.6.0",
+    "typer>=0.15.0",
+    "torch>=2.5.0",
     "transformers>=4.48.0",
 ]
+
+[project.scripts]
+consumer = "consumer.cli.main:main"
 
 [dependency-groups]
 dev = [
@@ -22,7 +28,14 @@ dev = [
 ]
 
 [tool.uv.sources]
-confidential-crypto = { path = "../../packages/confidential-crypto", editable = true }
+confidential-crypto = { workspace = true }
+torch = { index = "pytorch-cpu" }
+
+# CPU-only wheels keep the consumer image small (no CUDA libraries)
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
@@ -45,3 +58,5 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: needs network access to download the real model"]
+addopts = "-m 'not slow'"

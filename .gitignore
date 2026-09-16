@@ -25,14 +25,15 @@ venv/
 # OS
 .DS_Store
 
-# Artifacts and secrets
+# Generated: artifacts, keys, benchmark outputs
 *.enc
 *.sig
 *.key
 *.pem
 model_cache/
-artifacts/
+var/
 # Notebooks and benchmark outputs
 .ipynb_checkpoints/
 benchmarks/results/
-secrets/
+
+.env

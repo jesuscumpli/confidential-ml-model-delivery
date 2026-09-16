@@ -1,0 +1,31 @@
+[project]
+name = "confidential-ml-model-delivery"
+version = "0.1.0"
+description = "Workspace root: one uv environment for the crypto package, producer, consumer and benchmarks"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "services/*",
+    "benchmarks",
+]
+
+[dependency-groups]
+# Shared development tools, available globally from the workspace root with `uv run`.
+dev = [
+    "mypy>=1.14.0",
+    "pytest>=8.3.0",
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "C4", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

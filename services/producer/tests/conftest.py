@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from producer.settings import ProducerSettings
+from producer.models.settings import ProducerSettings
 
 MODEL_FILES: dict[str, bytes] = {
     "config.json": b'{"model_type": "bert", "vocab_size": 8}\n',

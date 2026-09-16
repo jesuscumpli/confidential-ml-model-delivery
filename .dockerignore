@@ -1,4 +1,5 @@
-# Root build context: only sources, lockfiles and the shared package are needed.
+# Root build context: the uv workspace needs every member's metadata to validate,
+# but caches, tests and non-build assets are pruned.
 **/.venv/
 **/__pycache__/
 **/*.py[cod]
@@ -12,11 +13,9 @@
 docs/
 k8s/
 scripts/
-tests/
-benchmarks/
 *.enc
 *.sig
 *.key
 *.pem
 model_cache/
-artifacts/
+var/

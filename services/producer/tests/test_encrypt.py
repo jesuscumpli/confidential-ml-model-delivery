@@ -14,8 +14,9 @@ from confidential_crypto.format import (
     ArtifactHeader,
 )
 
-from producer.encrypt import EncryptionMode, encrypt_file
-from producer.errors import EncryptionError
+from producer.core.encryption import encrypt_file
+from producer.core.errors import EncryptionError
+from producer.models.encryption import EncryptionMode
 
 CIPHER = get_cipher("aes-256-gcm")
 

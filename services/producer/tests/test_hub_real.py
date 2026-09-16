@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from producer.hub import HfHubClient
-from producer.pipeline import run_all
-from producer.settings import ProducerSettings
+from producer.app.pipeline import run_all
+from producer.infra.hub import HfHubClient
+from producer.models.settings import ProducerSettings
 
 pytestmark = pytest.mark.slow
 

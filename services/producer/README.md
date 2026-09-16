@@ -8,19 +8,29 @@ later milestone.
 
 ```bash
 uv sync
-uv run producer gen-key --out ../../secrets/model.key   # raw 32-byte key, mode 0600
+uv run producer gen-key --out ../../var/secrets/model.key   # raw 32-byte key, mode 0600
 uv run producer package                                 # download + deterministic model.tar
-uv run producer encrypt --key-path ../../secrets/model.key
+uv run producer encrypt --key-path ../../var/secrets/model.key
 HF_TOKEN=... uv run producer publish --repo-id <user>/<repo>
 HF_TOKEN=... uv run producer run --key-path ... --repo-id ...   # all three steps
 ```
 
-Working directory layout (`PRODUCER_WORK_DIR`, default `./artifacts`):
+Every flag is optional and overrides the matching `PRODUCER_*` variable; `--help` on
+any command lists the flags grouped by concern, with their default and variable:
+
+```bash
+uv run producer run --help
+uv run producer run --interactive                  # prompts for each value (Enter keeps the default)
+uv run producer run --model-id distilbert-base-uncased --mode one-shot --cipher chacha20-poly1305 ...
+uv run producer config                             # effective configuration, token masked
+```
+
+Working directory layout (`PRODUCER_WORK_DIR`, default `./var/artifacts`):
 
 ```text
-artifacts/model/            allow-listed model files from the Hub
-artifacts/model.tar         plaintext package: manifest.json + files, reproducible
-artifacts/upload/model.enc  the only file that is ever uploaded
+var/artifacts/model/            allow-listed model files from the Hub
+var/artifacts/model.tar         plaintext package: manifest.json + files, reproducible
+var/artifacts/upload/model.enc  the only file that is ever uploaded
 ```
 
 `publish` refuses any file that does not carry the encrypted-artifact header, so the
@@ -39,7 +49,7 @@ Environment variables (CLI flags override them; the key bytes are never a settin
 | `PRODUCER_PRIVATE_REPO` | `true` | create the destination as private |
 | `PRODUCER_ARTIFACT_NAME` | `model.enc` | name of the encrypted file |
 | `PRODUCER_KEY_PATH` | — | path of the raw/hex key file |
-| `PRODUCER_WORK_DIR` | `artifacts` | download/package/upload directory |
+| `PRODUCER_WORK_DIR` | `var/artifacts` | download/package/upload directory |
 | `PRODUCER_CIPHER` | `aes-256-gcm` | any production cipher from the registry |
 | `PRODUCER_ENCRYPTION_MODE` | `chunked` | `chunked` (format v2) or `one-shot` (v1) |
 | `PRODUCER_CHUNK_SIZE` | `1048576` | bytes per chunk in chunked mode |
@@ -56,7 +66,7 @@ always yields the same bytes.
 
 ```bash
 docker build -f services/producer/Dockerfile -t producer:dev .   # from the repository root
-docker run --rm -e HF_TOKEN -v "$PWD/secrets:/secrets:ro" producer:dev \
+docker run --rm -e HF_TOKEN -v "$PWD/var/secrets:/secrets:ro" producer:dev \
   run --key-path /secrets/model.key --repo-id <user>/<repo>
 ```
 

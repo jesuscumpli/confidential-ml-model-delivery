@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from confidential_crypto import get_cipher
 
-from producer.errors import ConfigError
-from producer.keys import read_key, write_new_key
+from producer.core.errors import ConfigError
+from producer.infra.keys import read_key, write_new_key
 
 CIPHER = get_cipher("aes-256-gcm")
 
