@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tarfile
 from pathlib import Path
@@ -78,12 +79,28 @@ def test_config_masks_token(
     assert "org/repo (private)" in out
 
 
-def test_encrypt_without_key_path_fails(
+def test_config_reports_metrics_toggle(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["config", "--repo-id", "org/repo", "--metrics"]) == 0
+    row = [line for line in capsys.readouterr().out.splitlines() if "metrics" in line]
+    assert any("on" in line for line in row)
+
+
+def test_encrypt_without_key_path_fails(fake_hub: FakeHubClient, make_settings: Any) -> None:
+    settings = make_settings(key_path=None)
+    pipeline.run_package(settings, fake_hub)
+    with pytest.raises(ConfigError, match="key path is required"):
+        pipeline.run_encrypt(settings)
+
+
+def test_encrypt_with_missing_key_file_fails(
     fake_hub: FakeHubClient, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert _cli(fake_hub, "package", "--work-dir", str(tmp_path / "w")) == 0
-    assert _cli(fake_hub, "encrypt", "--work-dir", str(tmp_path / "w")) == ConfigError.exit_code
-    assert "key path is required" in capsys.readouterr().err
+    work = tmp_path / "w"
+    assert _cli(fake_hub, "package", "--work-dir", str(work)) == 0
+    missing = tmp_path / "missing.key"
+    code = _cli(fake_hub, "encrypt", "--work-dir", str(work), "--key-path", str(missing))
+    assert code == ConfigError.exit_code
+    assert "invalid key file" in capsys.readouterr().err
 
 
 def test_encrypt_without_package_fails(
@@ -93,11 +110,10 @@ def test_encrypt_without_package_fails(
     assert code == ConfigError.exit_code
 
 
-def test_publish_without_repo_id_fails(
-    fake_hub: FakeHubClient, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert _cli(fake_hub, "publish", "--work-dir", str(tmp_path)) == ConfigError.exit_code
-    assert "repository id is required" in capsys.readouterr().err
+def test_publish_without_repo_id_fails(fake_hub: FakeHubClient, make_settings: Any) -> None:
+    settings = make_settings(hub_repo_id=None)
+    with pytest.raises(ConfigError, match="repository id is required"):
+        pipeline.run_publish(settings, fake_hub)
 
 
 def test_gen_key_never_prints_key(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -138,6 +154,34 @@ def test_one_shot_mode_is_selectable_per_artifact(
     pipeline.run_package(settings, fake_hub)
     artifact_path = pipeline.run_encrypt(settings)
     assert ArtifactHeader.decode(artifact_path.read_bytes())[0].version == 1
+
+
+def test_encrypt_omits_metrics_by_default(
+    fake_hub: FakeHubClient,
+    key_path: Path,
+    make_settings: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(key_path=key_path)
+    pipeline.run_package(settings, fake_hub)
+    with caplog.at_level(logging.INFO, logger="producer.app.pipeline"):
+        pipeline.run_encrypt(settings)
+    assert "encrypted" in caplog.text
+    assert "MiB/s" not in caplog.text
+
+
+def test_encrypt_logs_metrics_when_enabled(
+    fake_hub: FakeHubClient,
+    key_path: Path,
+    make_settings: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = make_settings(key_path=key_path, metrics=True)
+    pipeline.run_package(settings, fake_hub)
+    with caplog.at_level(logging.INFO, logger="producer.app.pipeline"):
+        pipeline.run_encrypt(settings)
+    assert "MiB/s" in caplog.text
+    assert "peak RSS" in caplog.text
 
 
 def test_publish_refuses_plaintext(

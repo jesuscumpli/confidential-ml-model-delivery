@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+from confidential_crypto import registry
 
 from consumer.core.decrypt import decrypt_file
 from consumer.core.extract import restore_package
 from consumer.core.ports import ArtifactSource, KeyProvider
 from consumer.infra.inference import fill_mask, load_model
 from consumer.infra.keys import EnvKeyProvider, FileKeyProvider
+from consumer.infra.metrics import peak_rss_mib, throughput_mib_s
 from consumer.models.inference import Prediction
 from consumer.models.settings import ConsumerSettings, KeySource
 
@@ -28,12 +32,23 @@ def run(
 ) -> list[Prediction]:
     with _work_dir(settings.work_dir) as work:
         artifact_path = source.fetch(
-            settings.hub_repo_id, settings.artifact_name, settings.artifact_revision, work
+            settings.hub_repo_id,
+            settings.artifact_name,
+            settings.artifact_revision,
+            force=settings.force,
         )
-        log.info("downloaded %s (%d bytes)", settings.artifact_name, artifact_path.stat().st_size)
+        log.info("artifact %s (%d bytes)", settings.artifact_name, artifact_path.stat().st_size)
         package_path = work / "model.tar"
-        decrypt_file(artifact_path, package_path, provider)
-        log.info("decrypted artifact to plaintext package (%d bytes)", package_path.stat().st_size)
+        started = time.perf_counter()
+        header = decrypt_file(artifact_path, package_path, provider)
+        elapsed = time.perf_counter() - started
+        log.info(
+            "decrypted artifact to plaintext package (%d bytes, %s, %s)%s",
+            package_path.stat().st_size,
+            registry.cipher_from_id(header.cipher_id).name,
+            "chunked" if header.chunked else "one-shot",
+            _metrics_suffix(artifact_path.stat().st_size, elapsed) if settings.metrics else "",
+        )
         model_dir = work / "model"
         manifest = restore_package(package_path, model_dir)
         log.info(
@@ -45,6 +60,14 @@ def run(
         loaded = load_model(model_dir)
         log.info("model loaded: %s", type(loaded.model).__name__)
         return fill_mask(loaded, settings.prompt, settings.top_k)
+
+
+def _metrics_suffix(size_bytes: int, elapsed: float) -> str:
+    """Elapsed time, throughput and process peak RSS, appended when metrics are on."""
+    return (
+        f" in {elapsed:.2f}s "
+        f"({throughput_mib_s(size_bytes, elapsed):.1f} MiB/s, peak RSS {peak_rss_mib():.1f} MiB)"
+    )
 
 
 def key_provider_for(settings: ConsumerSettings) -> KeyProvider:

@@ -11,13 +11,15 @@ from consumer.core.errors import DownloadError
 
 
 class HfArtifactSource:
+    """Downloads through the standard Hub cache, so repeat runs reuse the artifact."""
+
     def __init__(self, token: str | None) -> None:
         self._token = token
 
-    def fetch(self, repo_id: str, filename: str, revision: str, dest_dir: Path) -> Path:
+    def fetch(self, repo_id: str, filename: str, revision: str, *, force: bool = False) -> Path:
         try:
             downloaded = hf_hub_download(
-                repo_id, filename, revision=revision, cache_dir=dest_dir, token=self._token
+                repo_id, filename, revision=revision, token=self._token, force_download=force
             )
         except (HfHubHTTPError, EntryNotFoundError, OSError) as exc:
             raise DownloadError(

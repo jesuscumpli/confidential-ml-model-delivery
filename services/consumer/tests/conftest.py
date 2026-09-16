@@ -54,16 +54,19 @@ class StaticKeyProvider:
 
 
 class FakeArtifactSource:
-    """Serves in-memory bytes as if downloaded from the Hub."""
+    """Serves in-memory bytes from a local directory, mimicking the Hub cache."""
 
-    def __init__(self, files: dict[str, bytes]) -> None:
+    def __init__(self, files: dict[str, bytes], root: Path) -> None:
         self.files = files
-        self.calls: list[tuple[str, str, str]] = []
+        self.root = root
+        self.calls: list[tuple[str, str, str, bool]] = []
 
-    def fetch(self, repo_id: str, filename: str, revision: str, dest_dir: Path) -> Path:
-        self.calls.append((repo_id, filename, revision))
-        target = dest_dir / filename
-        target.write_bytes(self.files[filename])
+    def fetch(self, repo_id: str, filename: str, revision: str, *, force: bool = False) -> Path:
+        self.calls.append((repo_id, filename, revision, force))
+        target = self.root / filename
+        if force or not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(self.files[filename])
         return target
 
 
@@ -83,8 +86,8 @@ def artifact(package: bytes, key: bytes) -> bytes:
 
 
 @pytest.fixture
-def source(artifact: bytes) -> FakeArtifactSource:
-    return FakeArtifactSource({"model.enc": artifact})
+def source(artifact: bytes, tmp_path: Path) -> FakeArtifactSource:
+    return FakeArtifactSource({"model.enc": artifact}, tmp_path / "cache")
 
 
 @pytest.fixture

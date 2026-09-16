@@ -26,8 +26,10 @@ def artifact_key_size(path: Path) -> int:
         raise DecryptError(f"cannot read the artifact: {exc}") from exc
 
 
-def decrypt_file(src: Path, dst: Path, provider: KeyProvider) -> None:
+def decrypt_file(src: Path, dst: Path, provider: KeyProvider) -> ArtifactHeader:
     """Chunked (v2) artifacts stream with O(chunk) memory; one-shot (v1) load fully.
+
+    Returns the authenticated header so callers can report which mode was used.
 
     The plaintext is written to a temporary file and renamed only after every chunk
     authenticated, so a partially verified package never sits at `dst`.
@@ -46,6 +48,7 @@ def decrypt_file(src: Path, dst: Path, provider: KeyProvider) -> None:
                 else:
                     out.write(artifact.decrypt(inp.read(), key))
         os.replace(tmp_path, dst)
+        return header
     except (CryptoError, OSError) as exc:
         raise DecryptError(f"decryption failed: {exc}") from exc
     finally:

@@ -10,8 +10,8 @@ from typing import Protocol
 
 
 class ArtifactSource(Protocol):
-    def fetch(self, repo_id: str, filename: str, revision: str, dest_dir: Path) -> Path:
-        """Place `filename` from the repository into `dest_dir`; return its path."""
+    def fetch(self, repo_id: str, filename: str, revision: str, *, force: bool = False) -> Path:
+        """Return a local path to `filename`, reusing the Hub cache unless `force` is set."""
 
 
 class KeyProvider(Protocol):

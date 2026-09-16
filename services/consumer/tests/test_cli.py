@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 import pytest
+from confidential_crypto import encrypt
 
 from consumer.cli.main import main
 from consumer.core.errors import (
@@ -15,13 +17,12 @@ from consumer.core.errors import (
     ExtractionError,
     ModelLoadError,
 )
-from tests.conftest import FakeArtifactSource, StaticKeyProvider, encrypt_bytes
+from tests.conftest import CIPHER, FakeArtifactSource, StaticKeyProvider, encrypt_bytes
 
 
-def test_missing_repo_id_is_config_error(
-    source: FakeArtifactSource, provider: StaticKeyProvider
-) -> None:
-    assert main([], source=source, provider=provider) == ConfigError.exit_code
+def test_default_repo_id_is_used(source: FakeArtifactSource, provider: StaticKeyProvider) -> None:
+    main([], source=source, provider=provider)
+    assert source.calls[0][0] == "jesuscumpli/confidential-ml-model"
 
 
 def test_wrong_key_exit_code(source: FakeArtifactSource) -> None:
@@ -40,7 +41,7 @@ def test_missing_key_file_exit_code(
 
 def test_download_failure_exit_code(provider: StaticKeyProvider) -> None:
     class FailingSource:
-        def fetch(self, repo_id: str, filename: str, revision: str, dest_dir: Path) -> Path:
+        def fetch(self, repo_id: str, filename: str, revision: str, *, force: bool = False) -> Path:
             raise DownloadError("HTTP 404")
 
     assert (
@@ -49,12 +50,20 @@ def test_download_failure_exit_code(provider: StaticKeyProvider) -> None:
     )
 
 
-def test_bad_package_exit_code(key: bytes, provider: StaticKeyProvider) -> None:
-    source = FakeArtifactSource({"model.enc": encrypt_bytes(b"not a tar", key)})
+def test_bad_package_exit_code(key: bytes, provider: StaticKeyProvider, tmp_path: Path) -> None:
+    source = FakeArtifactSource({"model.enc": encrypt_bytes(b"not a tar", key)}, tmp_path / "cache")
     assert (
         main(["--repo-id", "org/repo"], source=source, provider=provider)
         == ExtractionError.exit_code
     )
+
+
+def test_force_flag_reaches_the_source(
+    source: FakeArtifactSource, provider: StaticKeyProvider
+) -> None:
+    code = main(["--repo-id", "org/repo", "--force"], source=source, provider=provider)
+    assert code == ModelLoadError.exit_code
+    assert source.calls == [("org/repo", "model.enc", "main", True)]
 
 
 def test_model_load_failure_exit_code_and_cleanup(
@@ -68,12 +77,8 @@ def test_model_load_failure_exit_code_and_cleanup(
     code = main(["--repo-id", "org/repo"], source=source, provider=provider)
     assert code == ModelLoadError.exit_code
     assert (tmp_path / "work").stat().st_mode & 0o777 == 0o700
-    assert sorted(p.name for p in (tmp_path / "work").iterdir()) == [
-        "model",
-        "model.enc",
-        "model.tar",
-    ]
-    assert source.calls == [("org/repo", "model.enc", "main")]
+    assert sorted(p.name for p in (tmp_path / "work").iterdir()) == ["model", "model.tar"]
+    assert source.calls == [("org/repo", "model.enc", "main", False)]
 
 
 def test_temporary_work_dir_is_removed(
@@ -88,7 +93,8 @@ def test_help_lists_options_with_defaults(capsys: pytest.CaptureFixture[str]) ->
     assert main(["--help"]) == 0
     out = capsys.readouterr().out  # rich wraps at terminal width: check fragments only
     assert "--key-source" in out
-    assert "/etc/model-key/key" in out
+    assert "--force" in out
+    assert "var/secrets/model.key" in out
     assert "CONSUMER_PROMPT" in out
 
 
@@ -102,3 +108,35 @@ def test_top_k_out_of_range_is_config_error(
 ) -> None:
     code = main(["--repo-id", "org/repo", "--top-k", "0"], source=source, provider=provider)
     assert code == ConfigError.exit_code
+
+
+def test_decrypt_omits_metrics_by_default(
+    source: FakeArtifactSource, provider: StaticKeyProvider, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="consumer.app.pipeline"):
+        main(["--repo-id", "org/repo"], source=source, provider=provider)
+    assert "decrypted artifact" in caplog.text
+    assert "aes-256-gcm, chunked" in caplog.text
+    assert "MiB/s" not in caplog.text
+
+
+def test_decrypt_logs_metrics_when_enabled(
+    source: FakeArtifactSource, provider: StaticKeyProvider, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="consumer.app.pipeline"):
+        main(["--repo-id", "org/repo", "--metrics"], source=source, provider=provider)
+    assert "MiB/s" in caplog.text
+    assert "peak RSS" in caplog.text
+
+
+def test_decrypt_reports_one_shot_artifacts(
+    package: bytes,
+    key: bytes,
+    provider: StaticKeyProvider,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = FakeArtifactSource({"model.enc": encrypt(package, key, CIPHER)}, tmp_path / "cache")
+    with caplog.at_level(logging.INFO, logger="consumer.app.pipeline"):
+        main(["--repo-id", "org/repo"], source=source, provider=provider)
+    assert "aes-256-gcm, one-shot" in caplog.text

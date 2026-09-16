@@ -6,6 +6,7 @@ Logs mention paths, sizes and commits only; never key bytes or tokens.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from confidential_crypto import get_cipher
@@ -18,6 +19,7 @@ from producer.core.errors import ConfigError, HubError
 from producer.core.packaging import package_model
 from producer.core.ports import HubClient
 from producer.infra.keys import read_key
+from producer.infra.metrics import peak_rss_mib, throughput_mib_s
 from producer.models.manifest import Manifest
 from producer.models.settings import ProducerSettings
 
@@ -45,6 +47,7 @@ def run_encrypt(settings: ProducerSettings, package_path: Path | None = None) ->
         raise ConfigError(f"package not found: {src} (run `producer package` first)")
     cipher = resolve_cipher(settings.cipher)
     key = read_key(_require_key_path(settings), cipher)
+    started = time.perf_counter()
     encrypt_file(
         src,
         settings.artifact_path,
@@ -53,14 +56,24 @@ def run_encrypt(settings: ProducerSettings, package_path: Path | None = None) ->
         mode=settings.encryption_mode,
         chunk_size=settings.chunk_size,
     )
+    elapsed = time.perf_counter() - started
     log.info(
-        "encrypted %s -> %s (%s, %s)",
+        "encrypted %s -> %s (%s, %s)%s",
         src,
         settings.artifact_path,
         cipher.name,
         settings.encryption_mode.value,
+        _metrics_suffix(src.stat().st_size, elapsed) if settings.metrics else "",
     )
     return settings.artifact_path
+
+
+def _metrics_suffix(size_bytes: int, elapsed: float) -> str:
+    """Elapsed time, throughput and process peak RSS, appended when metrics are on."""
+    return (
+        f" in {elapsed:.2f}s "
+        f"({throughput_mib_s(size_bytes, elapsed):.1f} MiB/s, peak RSS {peak_rss_mib():.1f} MiB)"
+    )
 
 
 def run_publish(

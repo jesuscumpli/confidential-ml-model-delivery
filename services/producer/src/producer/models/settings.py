@@ -33,11 +33,12 @@ class ProducerSettings(BaseSettings):
     )
     private_repo: bool = True
     artifact_name: str = Field(default=DEFAULT_ARTIFACT_NAME, pattern=r"^[A-Za-z0-9._-]+$")
-    key_path: Path | None = None
+    key_path: Path | None = Path("var/secrets/model.key")
     work_dir: Path = Path("var/artifacts")
     cipher: str = DEFAULT_CIPHER
     encryption_mode: EncryptionMode = EncryptionMode.CHUNKED
     chunk_size: int = Field(default=DEFAULT_CHUNK_SIZE, ge=MIN_CHUNK_SIZE, le=MAX_CHUNK_SIZE)
+    metrics: bool = False
 
     @property
     def model_dir(self) -> Path:

@@ -1,4 +1,4 @@
-"""Settings: required repo id, env parsing, secret masking, no key bytes anywhere."""
+"""Settings: defaults, env parsing, secret masking, no key bytes anywhere."""
 
 from __future__ import annotations
 
@@ -10,18 +10,21 @@ from consumer.models.settings import ConsumerSettings, KeySource
 TOKEN = "hf_not_a_real_token_value"  # noqa: S105 - test fixture, not a credential
 
 
-def test_repo_id_is_required() -> None:
-    with pytest.raises(ValidationError):
-        ConsumerSettings()  # type: ignore[call-arg]
+def test_repo_id_defaults_and_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert ConsumerSettings().hub_repo_id == "jesuscumpli/confidential-ml-model"
+    monkeypatch.setenv("CONSUMER_HUB_REPO_ID", "org/repo")
+    assert ConsumerSettings().hub_repo_id == "org/repo"
 
 
 def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONSUMER_HUB_REPO_ID", "org/repo")
-    settings = ConsumerSettings()  # type: ignore[call-arg]
+    settings = ConsumerSettings()
     assert settings.artifact_name == "model.enc"
+    assert settings.force is False
     assert settings.key_source is KeySource.FILE
-    assert str(settings.key_path) == "/etc/model-key/key"
+    assert str(settings.key_path) == "var/secrets/model.key"
     assert "[MASK]" in settings.prompt
+    assert settings.metrics is False
 
 
 def test_token_masked_and_key_never_present(monkeypatch: pytest.MonkeyPatch, key: bytes) -> None:
@@ -29,7 +32,7 @@ def test_token_masked_and_key_never_present(monkeypatch: pytest.MonkeyPatch, key
     monkeypatch.setenv("CONSUMER_KEY_SOURCE", "env")
     monkeypatch.setenv("HF_TOKEN", TOKEN)
     monkeypatch.setenv("MODEL_KEY", key.hex())
-    settings = ConsumerSettings()  # type: ignore[call-arg]
+    settings = ConsumerSettings()
     assert isinstance(settings.hf_token, SecretStr)
     for rendering in (
         str(settings),

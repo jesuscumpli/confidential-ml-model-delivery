@@ -36,6 +36,7 @@ log = logging.getLogger("consumer")
 _ARTIFACT = "Artifact"
 _KEY = "Decryption key"
 _INFERENCE = "Inference"
+_OUTPUT = "Output"
 
 
 def _option(*flags: str, field: str, text: str, panel: str, default: str | None = None) -> Any:
@@ -72,6 +73,15 @@ Revision = Annotated[
         "--revision",
         field="artifact_revision",
         text="Branch, tag or commit of the artifact repository.",
+        panel=_ARTIFACT,
+    ),
+]
+Force = Annotated[
+    bool | None,
+    _option(
+        "--force/--no-force",
+        field="force",
+        text="Re-download the artifact even when it is already cached.",
         panel=_ARTIFACT,
     ),
 ]
@@ -122,6 +132,15 @@ WorkDir = Annotated[
         default="temporary, removed on exit",
     ),
 ]
+Metrics = Annotated[
+    bool | None,
+    _option(
+        "--metrics/--no-metrics",
+        field="metrics",
+        text="Log decrypt elapsed time, throughput and peak RSS.",
+        panel=_OUTPUT,
+    ),
+]
 
 
 @app.command()
@@ -130,12 +149,14 @@ def run(
     repo_id: RepoId = None,
     artifact_name: ArtifactName = None,
     revision: Revision = None,
+    force: Force = None,
     key_source: KeySourceOpt = None,
     key_path: KeyPath = None,
     key_env_var: KeyEnvVar = None,
     prompt: Prompt = None,
     top_k: TopK = None,
     work_dir: WorkDir = None,
+    metrics: Metrics = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Debug logging.")] = False,
 ) -> None:
     """Download → decrypt → restore → load → predict, then print the top predictions."""
@@ -144,12 +165,14 @@ def run(
         hub_repo_id=repo_id,
         artifact_name=artifact_name,
         artifact_revision=revision,
+        force=force,
         key_source=key_source,
         key_path=key_path,
         key_env_var=key_env_var,
         prompt=prompt,
         top_k=top_k,
         work_dir=work_dir,
+        metrics=metrics,
     )
     wiring: Wiring = ctx.obj
     predictions = pipeline.run(

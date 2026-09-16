@@ -144,6 +144,15 @@ Cipher = Annotated[
         callback=_validate_cipher,
     ),
 ]
+Metrics = Annotated[
+    bool | None,
+    _option(
+        "--metrics/--no-metrics",
+        field="metrics",
+        text="Log per-step elapsed time and peak RSS.",
+        panel=_OUTPUT,
+    ),
+]
 ArtifactName = Annotated[
     str | None,
     _option("--artifact-name", field="artifact_name", text="Encrypted file name.", panel=_OUTPUT),
@@ -208,6 +217,7 @@ def encrypt(
     cipher: Cipher = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
+    metrics: Metrics = None,
 ) -> None:
     """Encrypt the package into the upload directory."""
     settings = _settings(
@@ -217,6 +227,7 @@ def encrypt(
         cipher=cipher,
         artifact_name=artifact_name,
         work_dir=work_dir,
+        metrics=metrics,
     )
     artifact_path = pipeline.run_encrypt(settings)
     out.print(f"[green]encrypted artifact written to {artifact_path}[/green]")
@@ -254,6 +265,7 @@ def run(
     cipher: Cipher = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
+    metrics: Metrics = None,
     interactive: Interactive = False,
 ) -> None:
     """Package, encrypt and publish in one go."""
@@ -268,6 +280,7 @@ def run(
         cipher=cipher,
         artifact_name=artifact_name,
         work_dir=work_dir,
+        metrics=metrics,
     )
     if interactive:
         settings = _ask_settings(settings)
@@ -288,6 +301,7 @@ def config(
     cipher: Cipher = None,
     artifact_name: ArtifactName = None,
     work_dir: WorkDir = None,
+    metrics: Metrics = None,
 ) -> None:
     """Show the effective configuration (environment plus flags). Secrets are masked."""
     settings = _settings(
@@ -301,6 +315,7 @@ def config(
         cipher=cipher,
         artifact_name=artifact_name,
         work_dir=work_dir,
+        metrics=metrics,
     )
     _print_config(settings)
 
@@ -324,6 +339,7 @@ def _ask_settings(current: ProducerSettings) -> ProducerSettings:
         "artifact_name": typer.prompt("Artifact name", default=current.artifact_name),
         "work_dir": typer.prompt("Work directory", default=current.work_dir, type=Path),
         "key_path": _ask_key_path(current),
+        "metrics": typer.confirm("Log per-step metrics?", default=current.metrics),
     }
     if answers["encryption_mode"] == EncryptionMode.CHUNKED.value:
         answers["chunk_size"] = typer.prompt("Chunk size (bytes)", default=current.chunk_size)
@@ -392,6 +408,7 @@ def _print_config(settings: ProducerSettings) -> None:
         "cipher": settings.cipher,
         "mode": settings.encryption_mode.value,
         "chunk size": f"{settings.chunk_size:,} bytes",
+        "metrics": "on" if settings.metrics else "off",
         "key file": str(settings.key_path or "-"),
         "artifact": str(settings.artifact_path),
         "work dir": str(settings.work_dir),
