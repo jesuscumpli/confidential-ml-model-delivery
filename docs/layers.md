@@ -134,7 +134,10 @@ Rules enforced in code and tests:
   the control plane. Layer 3 removes this.
 - Anyone holding the same key can publish a *different* encrypted model that the
   consumer will happily run. Layer 2 removes this.
-- Plaintext lives in pod memory and in the `emptyDir` during the Job.
+- Plaintext lives in pod memory and in a memory-backed `emptyDir` (tmpfs) during
+  the Job; it is never written to the node's disk. The Hub download is ciphertext
+  and stays in a disk-backed cache. Anyone who can read the node's memory can still
+  read the loaded model; Layer 3 is the answer to that.
 
 ---
 

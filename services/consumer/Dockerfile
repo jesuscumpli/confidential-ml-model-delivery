@@ -31,15 +31,17 @@ RUN apt-get update \
 RUN python -m pip uninstall --yes pip
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app \
-    && mkdir -p /work && chown app:app /work
+    && mkdir -p /work /cache && chown app:app /work /cache
 COPY --from=builder --chown=app:app /app /app
 
-# /work is the only writable location (emptyDir in Kubernetes); the key arrives as a
-# mounted Secret file at CONSUMER_KEY_PATH and is never part of the image or environment.
+# Two writable locations, split by sensitivity: /cache holds only ciphertext (the Hub
+# download, disk-backed emptyDir in Kubernetes) and /work holds the plaintext package
+# (memory-backed emptyDir). The key arrives as a mounted Secret file at
+# CONSUMER_KEY_PATH and is never part of the image or environment.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    HF_HOME=/work/hf-cache \
+    HF_HOME=/cache/hf \
     HF_HUB_DISABLE_PROGRESS_BARS=1 \
     CONSUMER_WORK_DIR=/work/consumer \
     CONSUMER_KEY_PATH=/etc/model-key/key \

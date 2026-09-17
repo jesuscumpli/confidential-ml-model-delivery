@@ -81,12 +81,15 @@ def test_model_load_failure_exit_code_and_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The fake package is not a loadable model; the plaintext stays inside the work dir."""
+    """The fake package is not a loadable model; the plaintext stays inside the work dir.
+
+    Only the restored files remain: the plaintext tar is deleted right after extraction.
+    """
     monkeypatch.setenv("CONSUMER_WORK_DIR", str(tmp_path / "work"))
     code = main(["--repo-id", "org/repo"], source=source, provider=provider)
     assert code == ModelLoadError.exit_code
     assert (tmp_path / "work").stat().st_mode & 0o777 == 0o700
-    assert sorted(p.name for p in (tmp_path / "work").iterdir()) == ["model", "model.tar"]
+    assert [p.name for p in (tmp_path / "work").iterdir()] == ["model"]
     assert source.calls == [
         ("org/repo", "model.enc", "main", False),
         ("org/repo", "model.sig", "main", False),

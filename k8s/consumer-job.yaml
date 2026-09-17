@@ -80,8 +80,10 @@ spec:
             - name: model-public-key      # Layer 2 trust anchor, separate from the Hub
               mountPath: /etc/model-public-key
               readOnly: true
+            - name: cache
+              mountPath: /cache            # ciphertext only (HF_HOME)
             - name: work
-              mountPath: /work
+              mountPath: /work             # plaintext package (CONSUMER_WORK_DIR)
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -98,7 +100,18 @@ spec:
             items:
               - key: signing.pub
                 path: signing.pub
+        # Storage split by sensitivity. The Hub download (model.enc, model.sig) is
+        # ciphertext and public, so it may live on the node's disk; the decrypted
+        # package goes to a tmpfs so the disk never sees plaintext. tmpfs sizeLimit
+        # counts against the container memory limit above, so keep the sum below it.
+        - name: cache
+          emptyDir:
+            sizeLimit: 2Gi
         - name: work
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi

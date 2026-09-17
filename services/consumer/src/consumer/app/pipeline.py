@@ -2,7 +2,9 @@
 
 Order is enforced by the types: `decrypt_file` only accepts the `VerifiedArtifact`
 that `verify_file` returns, so no decryption key is read before the signature
-checked out. The plaintext package only exists inside the private work directory.
+checked out. The plaintext package only exists inside the private work directory;
+the Hub download (ciphertext and signature) stays in the Hub cache, which may live
+on ordinary disk because it holds nothing secret.
 """
 
 from __future__ import annotations
@@ -57,6 +59,9 @@ def run(
         )
         model_dir = work / "model"
         manifest = restore_package(package_path, model_dir)
+        # The tar is plaintext too: drop it as soon as the files are restored so the
+        # work directory (a tmpfs in Kubernetes) holds a single copy of the model.
+        package_path.unlink()
         log.info(
             "restored %s@%s (%d files, manifest verified)",
             manifest.model_id,

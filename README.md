@@ -399,7 +399,7 @@ configuration — only where to find them.
 | Where do keys live? | `var/secrets/` on the producer; a Secret mounted read-only (`0400`) on the consumer. Never in env vars, settings, logs or images. |
 | Where is the trust anchor? | The public key in a ConfigMap, not on the Hub. |
 | Not protected | A cluster admin can read the Secret; plaintext exists inside the pod during the Job; a stolen `signing.key` breaks Layer 2. Layer 3 addresses the first. |
-| Pod hardening | `restricted` PSS namespace, non-root uid 999, read-only root FS, all capabilities dropped, seccomp `RuntimeDefault`, no service-account token, `backoffLimit: 0`. |
+| Pod hardening | `restricted` PSS namespace, non-root uid 999, read-only root FS, all capabilities dropped, seccomp `RuntimeDefault`, no service-account token, `backoffLimit: 0`; ciphertext cached on a disk `emptyDir`, plaintext only on a memory-backed `emptyDir` (tmpfs). |
 
 Threat model and design decisions: [`docs/architecture.md`](docs/architecture.md);
 per-layer guarantees and failure modes: [`docs/layers.md`](docs/layers.md).

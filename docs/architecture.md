@@ -248,7 +248,7 @@ flowchart LR
         end
         subgraph POD["Consumer pod (restricted PSS)"]
             CONS["consumer"]
-            PT["plaintext model<br/>emptyDir, deleted on exit"]
+            PT["plaintext model<br/>tmpfs emptyDir, deleted on exit"]
         end
     end
 
@@ -288,8 +288,18 @@ Assumptions we state openly:
   Layer 1 and Layer 2.
 - The producer host keeps `model.key` and `signing.key` secret. Rotation is a
   re-run of the producer plus a new Secret/ConfigMap.
-- Plaintext exists inside the pod after decryption. It lives in an `emptyDir` and a
-  private `0700` temp directory that is removed on exit.
+- Plaintext exists inside the pod after decryption, and only there. The consumer
+  splits its writable storage by sensitivity: the Hub download (`model.enc`,
+  `model.sig`, both public ciphertext) goes to a disk-backed `emptyDir` at `/cache`,
+  while the decrypted package goes to a memory-backed `emptyDir` (`medium: Memory`,
+  a tmpfs) at `/work`. The tar is deleted as soon as its files are restored, so the
+  tmpfs holds one copy of the model and the node's disk never sees plaintext.
+- Whoever can read the node's memory (root on the node, a cluster admin with
+  `kubectl debug`, the hypervisor) can read the loaded weights regardless of where
+  the files live; that is irreducible, since inference needs them in RAM, and it is
+  exactly what Layer 3 addresses with hardware memory encryption. Operationally the
+  node should run without swap and the pod without core dumps, otherwise "memory"
+  can still reach disk.
 
 ## 5. Deployment topology
 
@@ -311,7 +321,7 @@ flowchart TB
                 SEC["Secret model-key<br/>→ /etc/model-key/key"]
                 CM1["ConfigMap consumer-config<br/>hub_repo_id · artifact_name · artifact_revision"]
                 CM2["ConfigMap model-public-key<br/>→ /etc/model-public-key/signing.pub"]
-                ED["emptyDir /work, /tmp"]
+                ED["emptyDir /cache (disk, ciphertext)<br/>tmpfs /work, /tmp (plaintext)"]
             end
         end
     end
@@ -393,4 +403,5 @@ flowchart LR
 | Verify before decrypt, enforced by types | `decrypt_file` only accepts the `VerifiedArtifact` that `verify_file` returns. The mistake cannot compile. |
 | Public key via ConfigMap, not the Hub | If the Hub could serve the trust anchor, Layer 2 would be circular. |
 | Kubernetes Secret for the key | Exactly what the assignment asks; simple; a documented trust assumption that Layer 3 removes. |
+| Ciphertext on disk, plaintext on tmpfs | The download is public, so caching it on disk costs nothing; only the decrypted package needs RAM-backed storage. Keeps the memory budget at one copy of the model instead of three. |
 | Registry with authenticated algorithm id | Agility without downgrade: the id is in the AAD, unknown or non-production ids abort. |
