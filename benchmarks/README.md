@@ -1,6 +1,6 @@
 # benchmarks
 
-Crypto evaluation phase (`docs/plan.md`, Milestone 2b). Measures every cipher and
+Crypto evaluation phase (`docs/tasks.md`, M3). Measures every cipher and
 signature scheme registered in `confidential-crypto`, combines the numbers with a
 sourced security scorecard (`src/bench/scorecard.yaml`) and exports the decision
 record to `docs/crypto-evaluation.md`.

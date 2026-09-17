@@ -40,10 +40,28 @@ spec:
                 configMapKeyRef:
                   name: consumer-config
                   key: artifact_revision
+            - name: CONSUMER_PROMPT         # optional: settings default when the key is absent
+              valueFrom:
+                configMapKeyRef:
+                  name: consumer-config
+                  key: prompt
+                  optional: true
+            - name: CONSUMER_TOP_K
+              valueFrom:
+                configMapKeyRef:
+                  name: consumer-config
+                  key: top_k
+                  optional: true
             - name: CONSUMER_KEY_PATH
               value: /etc/model-key/key
             - name: CONSUMER_PUBLIC_KEY_PATH
               value: /etc/model-public-key/signing.pub
+            - name: HF_TOKEN                # only needed for a private Hub repo
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -1,8 +1,8 @@
 # Task list — iterative delivery plan
 
 Living checklist. Each milestone leaves the repository runnable, linted, typed,
-tested and committed before the next one starts. Order follows `docs/plan.md`
-Section 8 with one addition: a **crypto evaluation phase** (M3) that justifies
+tested and committed before the next one starts. Order follows the assignment's
+layers with one addition: a **crypto evaluation phase** (M3) that justifies
 the algorithm choice with measurements before the producer/consumer are built
 on top of it.
 
@@ -24,14 +24,14 @@ Decisions already taken (2026-09-15):
   flat at O(chunk), matches one-shot's security guarantees, and showed no throughput
   penalty file-to-file. streaming-gcm was rejected (releases plaintext before auth).
   Producer/consumer code and the demo must default to chunked; one-shot stays available
-  per artifact for small models. See `docs/crypto-evaluation.md` and (Spanish summary)
+  per artifact for small models. See `docs/crypto-evaluation.md` and (plain-language summary)
   `docs/crypto-decision.md`.
 
 ---
 
 ## M0 — Bootstrap adjustments
 
-- [x] Commit `docs/plan.md`; add a short "Evaluation phase" section and the shared-package justification to it.
+- [x] Write the project plan with an "Evaluation phase" section and the shared-package justification (later folded into `docs/architecture.md` and this file).
 - [x] Create `packages/confidential-crypto` uv project (same ruff/mypy/pytest config as the services).
 - [x] Create `benchmarks/` uv project (jupyter, pandas, matplotlib, `confidential-crypto[bench]`).
 - [x] Wire workspace dependencies: producer, consumer and benchmarks depend on `confidential-crypto` as a workspace member.
@@ -71,7 +71,7 @@ Decisions already taken (2026-09-15):
 - [x] `benchmarks/notebooks/crypto_evaluation.ipynb`: tables + charts, one combined ranking per category.
 - [x] `uv run bench export` writes `docs/crypto-evaluation.md` (ADR-style: context, candidates, measurements, decision, consequences).
 - [x] Record the selected default cipher and signer in the registry (`DEFAULT_CIPHER = aes-256-gcm`, `DEFAULT_SIGNER = ed25519`).
-- [x] Write `docs/crypto-decision.md` with plain-language rationale and the chunked-mode decision.
+- [x] Write `docs/crypto-decision.md` with plain-language rationale and the chunked-mode decision (English, with comparison diagrams since M10).
 - Acceptance: notebook runs end to end from a clean `uv sync`; markdown export committed; decision defended with numbers; chunked mode justified for multi-GB LLM artifacts.
 
 ## M4 — Model packaging (producer)
@@ -140,9 +140,8 @@ Decisions already taken (2026-09-15):
 
 ## M10 — Documentation
 
-- [ ] `docs/architecture.md`: components, data flow, trust boundaries, deployment topology (Mermaid diagrams).
-- [ ] `docs/security.md`: threat model, properties, assumptions, key lifecycle, failure modes, what L1/L2 do not protect, why the chosen cipher/signer and chunked mode (link to `docs/crypto-evaluation.md` and `docs/crypto-decision.md`), remaining risks.
-- [ ] `docs/layers.md`: L1/L2 implementation, L3 design + feasibility (KVM requirement, CoCo operator, Trustee KBS, `CdhKeyProvider` design, permissive policy caveats).
-- [ ] `README.md`: everything listed in `docs/plan.md` Section 7, followed end to end by a clean checkout.
-- [ ] Tick every box in `docs/plan.md` Section 7.
+- [x] `docs/architecture.md`: components, data flow, trust boundaries, deployment topology (Mermaid diagrams), threat model table, design decisions.
+- [x] `docs/layers.md`: L1/L2 implementation, L3 design + feasibility (KVM requirement, CoCo operator, Trustee KBS, `CdhKeyProvider` design, permissive policy caveats).
+- [x] `README.md`: rewritten as a step-by-step guide (install → keys → Hub → producer → consumer → Docker → kind → tamper demo), with collapsible placeholders for real command output, exit-code/troubleshooting tables, configuration reference, security summary and Layer 3 notes. `k8s/consumer-job.yaml` gained an optional `hf-token` Secret reference so private Hub repos work in the Job.
+- [x] Definition of done reviewed item by item (separate producer/consumer projects and images, documented model, AES-256-GCM chunked, evaluation notebook + record, artifact + signature on the Hub, Secret-delivered key, verify-before-decrypt, tamper test, positive/negative security tests, README reproducible, no secrets committed).
 - Acceptance: a reviewer can reproduce Layer 1 and the Layer 2 tamper demo from the README alone.

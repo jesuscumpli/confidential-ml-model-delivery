@@ -39,3 +39,4 @@ k8s/configmap-public-key.yaml
 benchmarks/results/
 
 .env
+/.mcp.json

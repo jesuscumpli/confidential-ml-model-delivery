@@ -1,99 +1,193 @@
-# Criptografía: decisiones tras la evaluación
+# Cryptography: decisions after the evaluation
 
-Resumen de lo que decidimos después de medir todos los algoritmos de
-`confidential-crypto`. Los números completos, los criterios y las fuentes están en el registro `docs/crypto-evaluation.md`.
+Plain-language summary of what we decided after measuring every algorithm in
+`confidential-crypto`. The full numbers, criteria and sources are in the formal
+record [`crypto-evaluation.md`](crypto-evaluation.md); the code that produced them is
+in `benchmarks/`.
 
-## El escenario
+## The scenario
 
-Queremos distribuir modelos LLM cifrados. Un **productor** cifra y firma el modelo; un **consumidor**
-en Kubernetes lo descarga, verifica la firma, obtiene la clave de un Secret, descifra y carga el modelo.
-Los modelos LLM pesan **GB**, así que hay tres preguntas:
+We want to distribute encrypted LLM models. A **producer** encrypts and signs the
+model; a **consumer** in Kubernetes downloads it, verifies the signature, gets the key
+from a Secret, decrypts and loads the model. LLM weights are **gigabytes**, so there
+are three questions:
 
-1. ¿Qué cifrador uso para proteger el modelo?
-2. ¿Qué esquema de firma uso para que el consumidor detecte si el archivo fue manipulado?
-3. ¿Cómo aplico el cifrado a un archivo de GB sin que el consumidor se quede sin memoria?
+![Three questions, three decisions](images/crypto-three-questions.svg)
 
-## Qué se midió
+<details>
+<summary>Mermaid source</summary>
 
-Cada algoritmo se probó con archivos de 16, 64 y 256 MiB (con varias repeticiones):
+```mermaid
+flowchart LR
+    S["Scenario<br/>multi-GB model artifact<br/>producer → Hub → consumer pod"]
+    Q1["1. Which cipher<br/>protects the model?"]
+    Q2["2. Which signature scheme<br/>detects tampering?"]
+    Q3["3. How to encrypt GBs<br/>without running out of RAM?"]
+    D1["aes-256-gcm<br/>score 4.8 / 5"]
+    D2["ed25519<br/>score 4.4 / 5"]
+    D3["chunked mode (format v2)<br/>O(chunk) memory"]
+    S --> Q1 --> D1
+    S --> Q2 --> D2
+    S --> Q3 --> D3
+    classDef pick fill:#e8f5e9,stroke:#2e7d32,color:#1b1b1b;
+    class D1,D2,D3 pick;
+```
 
-- **Velocidad**: cuántos MiB por segundo cifra y descifra.
-- **Memoria**: cuánto crece el uso de RAM al cifrar y al descifrar.
-- **Espacio extra**: cuántos bytes añade al archivo (nonce + tag).
-- **Seguridad**: puntuación 0–3 con criterios objetivos y fuentes.
+</details>
 
-> No se ha medido en este caso el cómputo de CPU. El rendimiento y mejora en CPU/hardware lo dejo fuera del scope.
-> Me centro más en memoria.
+## What was measured
 
-## Cifrado (con archivos de 256 MiB)
+Every algorithm was run on files of 16, 64 and 256 MiB, several repetitions each:
 
-| Algoritmo | Vel. cifra / descifra | Memoria | Ventajas | Inconvenientes |
+- **Speed**: MiB per second encrypting and decrypting.
+- **Memory**: how much RAM usage grows while encrypting and decrypting.
+- **Overhead**: bytes added to the file (nonce + tag).
+- **Security**: a 0–3 score per objective criterion, each with a source.
+
+> CPU cost was not measured. Hardware acceleration and CPU tuning are out of scope;
+> the focus is memory, because that is what limits a consumer pod.
+
+## Ciphers (256 MiB files)
+
+| Algorithm | Encrypt / decrypt | Memory | Pros | Cons |
 |---|---|---|---|---|
-| **aes-256-gcm** | ~1160 / ~1985 MiB/s | 768 MiB | estándar de facto (NIST), rapidísimo con AES-NI, ecosistema enorme | reutilizar el nonce lo rompe todo; sin AES-NI va lento y el software no es tiempo constante |
-| **chacha20-poly1305** | ~890 / ~1290 MiB/s | 768 MiB | rápido sin hardware especial, tiempo constante, el plan B de TLS 1.3 | mismo problema del nonce; no está en la lista FIPS |
-| **aes-256-gcm-siv** | ~480 / ~575 MiB/s | 768 MiB | el reuso de nonce casi no importa (solo delata si dos mensajes son iguales) | el más lento (hace dos pasadas), poco desplegado, requiere OpenSSL reciente |
-| **xchacha20-poly1305** | ~645 / ~607 MiB/s | 1279 MiB | nonce de 192 bits: colisiones accidentales casi imposibles | sin RFC oficial (borrador caducado), más memoria, más lento |
-| **aes-256-cbc-hmac-sha256** | ~347 / ~532 MiB/s | 1279 MiB | ninguno | composición casera CBC+HMAC, origen de los históricos *padding oracle*; **no apto para producción** |
+| **aes-256-gcm** | ~1160 / ~1985 MiB/s | 768 MiB | de-facto standard (NIST), very fast with AES-NI, huge ecosystem | nonce reuse breaks everything; slow and not constant-time without AES-NI |
+| **chacha20-poly1305** | ~890 / ~1290 MiB/s | 768 MiB | fast without special hardware, constant-time, TLS 1.3's plan B | same nonce problem; not on the FIPS list |
+| **aes-256-gcm-siv** | ~480 / ~575 MiB/s | 768 MiB | nonce reuse almost harmless (only reveals equal messages) | slowest (two passes), little deployment, needs a recent OpenSSL |
+| **xchacha20-poly1305** | ~645 / ~607 MiB/s | 1279 MiB | 192-bit nonce: accidental collisions practically impossible | no official RFC (expired draft), more memory, slower |
+| **aes-256-cbc-hmac-sha256** | ~347 / ~532 MiB/s | 1279 MiB | none | home-made CBC+HMAC composition, source of the historic padding-oracle bugs; **not production-safe** |
 
-Veredicto del ranking ponderado: `aes-256-gcm` (4.8) > `chacha20-poly1305` (4.2) > `aes-256-gcm-siv`
-(3.7) > `xchacha20-poly1305` (3.1) > `aes-256-cbc-hmac-sha256` (0).
+Weighted ranking (speed ×1, memory ×0.5, security ×3):
 
-> **Elegimos `aes-256-gcm`**: el más rápido y el más estándar. Su único riesgo (el nonce) es
-> controlable aquí porque solo cifra el productor, una vez por archivo.
+![Cipher ranking](images/crypto-cipher-ranking.svg)
 
-## Esquemas de firma
+<details>
+<summary>Mermaid source</summary>
 
-| Esquema | Firmar / verificar | Clave pública / firma | Determinista | Ventajas | Inconvenientes |
+```mermaid
+xychart-beta
+    title "Weighted cipher score (max 5.0)"
+    x-axis ["aes-256-gcm", "chacha20-poly1305", "aes-256-gcm-siv", "xchacha20-poly1305", "aes-cbc-hmac"]
+    y-axis "score" 0 --> 5
+    bar [4.8, 4.2, 3.7, 3.1, 0]
+```
+
+</details>
+
+> **We chose `aes-256-gcm`**: the fastest and the most standard. Its only risk (the
+> nonce) is under control here because only the producer encrypts, once per file.
+
+## Signature schemes
+
+| Scheme | Sign / verify | Public key / signature | Deterministic | Pros | Cons |
 |---|---|---|---|---|---|
-| **ed25519** | 36.7 / 19.5 ms | 113 B / 64 B | sí | nada que fallar con aleatoriedad, tiempo constante por diseño, firmas diminutas, RFC 8032 / FIPS 186-5 | no es post-cuántico |
-| **ecdsa-p256** | 8.1 / 8.5 ms | 178 B / 72 B | no | muy rápido, claves instantáneas | necesita un nonce secreto por firma: si se reutiliza se filtra la clave privada (casos reales: PS3, wallets de Bitcoin) |
-| **rsa-pss-3072** | 96.6 / 8.6 ms | 625 B / 384 B | no | verificación rapidísima, décadas de auditoría | claves y firmas grandes, generar la clave tarda 320 ms |
-| **rsa-pss-4096** | 211 / 8.3 ms | 800 B / 512 B | no | algo más de margen que 3072 | lo mismo pero más lento: 848 ms solo en generar la clave |
-| **ml-dsa-65** | 31.5 / 30.6 ms | 2726 B / 3309 B | no | estándar post-cuántico de NIST (Dilithium) | claves y firmas enormes (~3 KB), implementaciones nuevas y poco auditadas |
+| **ed25519** | 36.7 / 19.5 ms | 113 B / 64 B | yes | nothing to get wrong with randomness, constant-time by design, tiny signatures, RFC 8032 / FIPS 186-5 | not post-quantum |
+| **ecdsa-p256** | 8.1 / 8.5 ms | 178 B / 72 B | no | very fast, instant key generation | needs a secret nonce per signature: reuse leaks the private key (real cases: PS3, Bitcoin wallets) |
+| **rsa-pss-3072** | 96.6 / 8.6 ms | 625 B / 384 B | no | very fast verification, decades of audit | big keys and signatures, key generation takes 320 ms |
+| **rsa-pss-4096** | 211 / 8.3 ms | 800 B / 512 B | no | a bit more margin than 3072 | same but slower: 848 ms just to generate the key |
+| **ml-dsa-65** | 31.5 / 30.6 ms | 2726 B / 3309 B | no | NIST post-quantum standard (Dilithium) | huge keys and signatures (~3 KB), new and lightly audited implementations |
 
-> **Elegimos `ed25519`**: primero del ranking (4.4) y por las razones correctas: determinista,
-> siempre tiempo constante y firmas diminutas. El hueco post-cuántico queda anotado — `ml-dsa-65` ya
-> está registrado por si algún día migramos, sería un cambio de opción, no un rediseño.
+Weighted ranking (sign ×0.5, verify ×1, size ×0.5, security ×3):
 
-## Modos de cifrado (cómo se aplica el cifrado al archivo)
+![Signature scheme ranking](images/crypto-signer-ranking.svg)
 
-| Modo | Memoria (256 MiB) cifrar / descifrar | Vel. archivo→archivo (aes-256-gcm) | ¿Autentica antes de liberar datos? | Ventajas | Inconvenientes |
+<details>
+<summary>Mermaid source</summary>
+
+```mermaid
+xychart-beta
+    title "Weighted signature scheme score (max 5.0)"
+    x-axis ["ed25519", "ecdsa-p256", "rsa-pss-3072", "rsa-pss-4096", "ml-dsa-65"]
+    y-axis "score" 0 --> 5
+    bar [4.4, 3.2, 2.3, 1.4, 1.0]
+```
+
+</details>
+
+> **We chose `ed25519`**: first in the ranking (4.4) and for the right reasons:
+> deterministic, always constant-time, tiny signatures. The post-quantum gap is noted:
+> `ml-dsa-65` is already registered, so a migration would be a configuration change,
+> not a redesign.
+
+## Encryption modes (how the cipher is applied to the file)
+
+| Mode | Memory (256 MiB) encrypt / decrypt | File-to-file speed (aes-256-gcm) | Authenticates before releasing data? | Pros | Cons |
 |---|---|---|---|---|---|
-| **one-shot** | ~512 MiB | 626 / 578 MiB/s | sí | el código más simple, garantía "todo o nada", 18/18 en la tabla de seguridad | la memoria crece con el archivo (~2×): inviable para pesos de GB |
-| **chunked** | ~2.7 / ~3.5 MiB | 941 / 740 MiB/s | sí (por fragmento) | memoria plana siempre, misma seguridad que one-shot, y archivo a archivo no es más lento (de hecho en la medición sale más rápido) | formato v2, un tag por fragmento, más lógica delicada (nonce por fragmento, último fragmento, lecturas cortas) |
-| **streaming-gcm** | ~1.5 / ~1.6 MiB | 698 / 643 MiB/s | **no** | memoria mínima, no cambia el formato | libera texto plano sin verificar: descartado para esto; solo funciona con AES-GCM |
+| **one-shot** | ~512 MiB | 626 / 578 MiB/s | yes | simplest code, all-or-nothing guarantee, 18/18 on the security table | memory grows with the file (~2×): not viable for GB weights |
+| **chunked** | ~2.7 / ~3.5 MiB | 941 / 740 MiB/s | yes (per chunk) | flat memory always, same security as one-shot, and file to file it is not slower (measured faster) | format v2, one tag per chunk, more delicate logic (per-chunk nonce, last chunk, short reads) |
+| **streaming-gcm** | ~1.5 / ~1.6 MiB | 698 / 643 MiB/s | **no** | minimal memory, format unchanged | releases plaintext before verifying: rejected for this use; only works with AES-GCM |
 
-## La decisión grande: chunked
+![Peak memory per mode](images/crypto-mode-memory.svg)
 
-Se podría argumentar one-shot por puntuar más en la tabla (18 vs 17), pero ese punto de ventaja es
-todo **simplicidad del código y estabilidad de formato**, y la pieza que one-shot no puede dar es
-justo la que necesitamos: **memoria constante**. Un modelo LLM de ~10 GB obligaría a ~20 GB de RAM en
-el consumidor con one-shot; en un pod de Kubernetes eso no se pide.
+<details>
+<summary>Mermaid source</summary>
 
-**chunked** mantiene la memoria plana en ~3–4 MiB sin importar el tamaño del modelo, ofrece las
-mismas garantías de seguridad (cada fragmento se autentica antes de escribirse, detecta truncados y
-reordenamientos) y, medido archivo a archivo, **no pierde rendimiento**: en nuestras medidas incluso
-gana, porque evita los buffers monstruosos que causan fallos de página en one-shot.
+```mermaid
+xychart-beta
+    title "Peak memory to decrypt a 256 MiB artifact (MiB)"
+    x-axis ["one-shot", "chunked", "streaming-gcm"]
+    y-axis "MiB" 0 --> 600
+    bar [512, 3.5, 1.6]
+```
 
-**streaming-gcm se descarta** aunque gaste la menor memoria de todos: libera datos antes de
-verificar el tag, y un consumidor que carga el modelo directamente desde la salida descifrada no
-puede permitirse eso. Es el ejemplo negativo documentado.
+</details>
 
-## Decisión final
+## The big decision: chunked
 
-| Decisión | Valor | Por qué |
+One could argue for one-shot because it scores one point higher on the table (18 vs
+17), but that point is all **code simplicity and format stability**, and the one thing
+one-shot cannot give is exactly what we need: **constant memory**. A ~10 GB LLM would
+force ~20 GB of RAM on the consumer with one-shot; nobody asks that of a Kubernetes pod.
+
+**chunked** keeps memory flat at ~3–4 MiB whatever the model size, gives the same
+security guarantees (every chunk is authenticated before it is written; truncation and
+reordering are detected) and, measured file to file, **loses no performance**: in our
+runs it even wins, because it avoids the huge buffers that cause page faults in
+one-shot.
+
+**streaming-gcm is rejected** even though it uses the least memory of all: it releases
+data before checking the tag, and a consumer that loads the model straight from the
+decrypted output cannot afford that. It stays in the evaluation as the documented
+negative example.
+
+![Mode decision](images/crypto-mode-decision.svg)
+
+<details>
+<summary>Mermaid source</summary>
+
+```mermaid
+flowchart TB
+    A{"Authenticates every byte<br/>before releasing it?"}
+    A -- "no" --> R["streaming-gcm<br/>rejected"]
+    A -- "yes" --> M{"Memory grows<br/>with the file?"}
+    M -- "yes (~2× the artifact)" --> O["one-shot (format v1)<br/>kept for small models"]
+    M -- "no (O(chunk))" --> C["chunked (format v2)<br/>production default"]
+    classDef bad fill:#ffebee,stroke:#c62828,color:#1b1b1b;
+    classDef pick fill:#e8f5e9,stroke:#2e7d32,color:#1b1b1b;
+    classDef alt fill:#fff8e1,stroke:#f9a825,color:#1b1b1b;
+    class R bad;
+    class C pick;
+    class O alt;
+```
+
+</details>
+
+## Final decision
+
+| Decision | Value | Why |
 |---|---|---|
-| Cifrador | `aes-256-gcm` | el más rápido y estándar; el riesgo del nonce es controlable (solo cifra el productor) |
-| Firma | `ed25519` | determinista, seguro por diseño, diminuta, nº 1 del ranking |
-| Modo | **chunked** | memoria constante para pesos de GB, misma seguridad, sin penalización de velocidad |
+| Cipher | `aes-256-gcm` | fastest and most standard; the nonce risk is controllable (only the producer encrypts) |
+| Signature | `ed25519` | deterministic, secure by design, tiny, #1 in the ranking |
+| Mode | **chunked** | constant memory for GB weights, same security, no speed penalty |
 
-El consumidor decide el modo a partir del byte de versión autenticado del artefacto, así que publicar
-en chunked no rompe nada: si algún día hace falta (modelo pequeño, máquina con RAM de sobra),
-seguiría existiendo one-shot como alternativa.
+The consumer picks the mode from the artifact's authenticated version byte, so
+publishing in chunked mode breaks nothing: if one day it is useful (small model,
+machine with spare RAM), one-shot is still there as an alternative.
 
-## Riesgos que quedan anotados
+## Risks that stay on record
 
-- **Nonce**: GCM con nonce aleatorio; como solo cifra el productor una vez por archivo, el límite de
-  2^32 mensajes por clave no aplica.
-- **Post-cuántico**: la confidencialidad ya es resistente a ordenadores cuánticos (clave de 256 bits);
-  la firma no lo es. `ml-dsa-65` está medido y registrado por si migramos a híbrido.
+- **Nonce**: GCM with a random nonce; since only the producer encrypts, once per file,
+  the 2^32-messages-per-key bound does not apply.
+- **Post-quantum**: confidentiality already resists quantum computers (256-bit key);
+  the signature does not. `ml-dsa-65` is measured and registered in case we move to a
+  hybrid scheme.

@@ -9,7 +9,9 @@
 # Requires: scripts/kind-setup.sh already run, the artifact and its signature already
 # published by the producer, the decryption key at KEY_PATH (scripts/gen-key.sh) and
 # the public signing key at PUBLIC_KEY_PATH (scripts/gen-signing-keypair.sh). Fresh
-# Secret and ConfigMaps are created from these values on every run. The tamper variant
+# Secret and ConfigMaps are created from these values on every run. PROMPT and TOP_K,
+# when set, are added to the ConfigMap and override the consumer's inference defaults.
+# The tamper variant
 # also needs HF_TOKEN with write access: it publishes a one-byte-flipped copy of the
 # artifact to the `tampered` branch of HUB_REPO_ID and points the consumer at it.
 set -euo pipefail
@@ -26,6 +28,8 @@ fi
 : "${KEY_PATH:=${ROOT}/var/secrets/model.key}"
 : "${PUBLIC_KEY_PATH:=${ROOT}/var/secrets/signing.pub}"
 : "${ARTIFACT_NAME:=model.enc}"
+: "${PROMPT:=}"           # empty: the consumer's default fill-mask prompt
+: "${TOP_K:=}"            # empty: the consumer's default (5)
 : "${TAMPERED_BRANCH:=tampered}"
 
 KUBECTL=(kubectl --context "kind-${CLUSTER_NAME}" --namespace "${NAMESPACE}")
@@ -36,6 +40,8 @@ apply_config() {
     --from-literal=hub_repo_id="${HUB_REPO_ID}" \
     --from-literal=artifact_name="${ARTIFACT_NAME}" \
     --from-literal=artifact_revision="${revision}" \
+    ${PROMPT:+--from-literal=prompt="${PROMPT}"} \
+    ${TOP_K:+--from-literal=top_k="${TOP_K}"} \
     --dry-run=client -o yaml | "${KUBECTL[@]}" apply -f -
   apply_public_key
   "${KUBECTL[@]}" delete job consumer --ignore-not-found --wait=true
@@ -52,19 +58,41 @@ apply_job() {
   "${KUBECTL[@]}" apply -f "${ROOT}/k8s/consumer-job.yaml"
 }
 
+job_state() {
+  local status
+  status="$("${KUBECTL[@]}" get job consumer \
+    -o jsonpath='{.status.conditions[?(@.status=="True")].type}' 2>/dev/null || true)"
+  case "${status}" in
+    *Complete*|*SuccessCriteriaMet*) echo complete ;;
+    *Failed*) echo failed ;;
+    *) echo running ;;
+  esac
+}
+
 wait_for_job() {
-  local condition="$1" timeout="$2"
-  if "${KUBECTL[@]}" wait --for=condition="${condition}" job/consumer --timeout="${timeout}" 2>/dev/null; then
-    echo "---- consumer logs ----"
-    "${KUBECTL[@]}" logs job/consumer || true
-    echo "-----------------------"
-    echo "job status: ${condition}"
-  else
-    echo "---- pod status ----"
-    "${KUBECTL[@]}" get pods -l app=consumer -o wide || true
-    echo "job status: timed out waiting for ${condition}"
-    return 1
-  fi
+  # Poll instead of `kubectl wait --for=condition=...`: that call only returns when the
+  # requested condition appears, so waiting for `complete` on a Job that failed at once
+  # would block for the whole timeout. Here any terminal state ends the wait.
+  local expected="$1" timeout="$2" deadline state
+  deadline=$(( SECONDS + ${timeout%s} ))
+  while :; do
+    state="$(job_state)"
+    if [[ "${state}" != running ]]; then
+      break
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "---- pod status ----"
+      "${KUBECTL[@]}" get pods -l app=consumer -o wide || true
+      echo "job status: timed out waiting for ${expected}"
+      return 1
+    fi
+    sleep 2
+  done
+  echo "---- consumer logs ----"
+  "${KUBECTL[@]}" logs job/consumer || true
+  echo "-----------------------"
+  echo "job status: ${state}"
+  [[ "${state}" == "${expected}" ]]
 }
 
 apply_secret() {
@@ -124,7 +152,7 @@ run_negative() {
     echo "job failed as expected (consumer exit code ${exit_code})"
     echo "note: re-run scripts/demo.sh to restore the real Secret"
   else
-    echo "job did not finish: pod is stuck (expected for variant=missing)"
+    echo "job did not fail within the timeout: pod is stuck (expected for variant=missing) or it completed"
   fi
   "${KUBECTL[@]}" delete job consumer --ignore-not-found --wait=true
 }

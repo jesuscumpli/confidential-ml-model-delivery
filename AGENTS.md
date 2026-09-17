@@ -11,8 +11,9 @@ running in Kubernetes retrieves the artifact, verifies the signature (Layer 2),
 gets the decryption key from a Kubernetes Secret (Layer 1), decrypts, restores
 and loads the model, and runs a minimal inference.
 
-The authoritative spec lives in `docs/plan.md` and `docs/test_assignment.md`;
-the per-milestone checklist is `docs/tasks.md`. Start there before making changes.
+The original assignment is `docs/test_assignment.md`; the architecture and the security
+layers are documented in `docs/architecture.md` and `docs/layers.md`; the per-milestone
+checklist with every decision taken is `docs/tasks.md`. Start there before making changes.
 
 ## Repository layout
 
@@ -47,7 +48,7 @@ phase live behind its `bench` extra and never ship in service images.
 
 The algorithms were measured in `benchmarks/` and the results justify the registry
 defaults; the formal record is `docs/crypto-evaluation.md` and a plain-language
-Spanish summary is `docs/crypto-decision.md`.
+summary with diagrams is `docs/crypto-decision.md`.
 
 - Cipher: `aes-256-gcm` (top-ranked; fastest and most standard, nonce risk controllable).
 - Signer: `ed25519` (top-ranked; deterministic, constant-time, minimal signatures).
@@ -62,8 +63,6 @@ Spanish summary is `docs/crypto-decision.md`.
 
 - Everything must be written in English: identifiers, strings, comments,
   commit messages, and documentation.
-  Exception: user-facing documentation explicitly requested in Spanish by the
-  maintainers (e.g. `docs/crypto-decision.md`) stays in Spanish.
 - Follow good programming practices: type hints, small focused functions,
   explicit error handling, no dead code.
 - Do not add excessive comments. Only short essential comments that explain
@@ -117,12 +116,12 @@ docker build -f services/consumer/Dockerfile -t consumer:dev .
 
 ## Milestones / status
 
-See the implementation order in `docs/plan.md` (Section 8). Keep the system
+Milestones M0–M10 are listed in order in `docs/tasks.md`. Keep the system
 runnable at each milestone; do not accumulate unverified infrastructure
 changes. Do not jump to Layer 3 before Layers 1 and 2 are complete, tested,
 and documented.
 
 ## Definition of done
 
-The mandatory submission is complete when every unchecked item in
-`docs/plan.md` Section 7 is satisfied. No secret material is committed.
+The mandatory submission is complete when every milestone in `docs/tasks.md` is
+ticked and its acceptance criterion is met. No secret material is committed.
